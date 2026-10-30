@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main, refactor/estructura-y-estabilidad]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: |
+          ruff check src/ app.py inferencia_cancer3.py cli/ tests/
+          ruff format --check src/ app.py inferencia_cancer3.py cli/ tests/
+
+      - name: Run tests with pytest
+        run: |
+          pytest tests/ -q
