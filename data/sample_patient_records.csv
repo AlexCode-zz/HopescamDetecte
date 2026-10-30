@@ -1,0 +1,6 @@
+Nombres,Apellidos,Edad,Género,DUI,Fecha_Registro,Resultado_IA,Confianza_IA
+Ana,Garcia,34,Femenino,01234567-8,2025-05-10 09:00:00,Benigno,98.50
+Luis,Perez,16,Masculino,Menor de 18,2025-05-11 10:00:00,Maligno,60.20
+Maria,Lopez,42,Femenino,98765432-1,2025-05-12 11:00:00,Normal,92.10
+Carlos,Ramirez,28,Masculino,11223344-5,2025-05-13 12:00:00,Benigno,88.00
+Sofia,Fernandez,60,Femenino,55667788-9,2025-05-14 13:00:00,Maligno,52.02
