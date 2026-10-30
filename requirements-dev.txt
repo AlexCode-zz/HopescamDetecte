@@ -1,0 +1,4 @@
+# Dependencias de desarrollo — HopeScan
+pytest==9.2.0
+pytest-cov==6.0.0
+ruff==0.17.3
