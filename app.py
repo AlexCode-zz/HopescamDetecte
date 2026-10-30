@@ -6,22 +6,22 @@ estado de sesión y flujo UX idéntico al código original.
 
 from __future__ import annotations
 
-import streamlit as st
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import streamlit as st
 
 # Hacer que src/ sea importable tanto si se ejecuta app.py directamente
 # (streamlit run app.py) como vía shim inferencia_cancer3.py
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from hopescan.config import APP_NAME, resolve_model_path
+from hopescan.config import resolve_model_path
 from hopescan.model import load_model
-from hopescan.auth import verify_search_password
-from hopescan.ui.styles import STYLE_CSS, CHAT_CSS
-from hopescan.ui.sidebar_info import render_sidebar
-from hopescan.ui.nuevo_analisis import view_nuevo_analisis
 from hopescan.ui.buscar_paciente import view_buscar_paciente
 from hopescan.ui.chat_widget import render_widget
+from hopescan.ui.nuevo_analisis import view_nuevo_analisis
+from hopescan.ui.sidebar_info import render_sidebar
+from hopescan.ui.styles import CHAT_CSS, STYLE_CSS
 
 
 def main() -> None:
@@ -36,7 +36,6 @@ def main() -> None:
     st.markdown(STYLE_CSS, unsafe_allow_html=True)
     st.markdown(CHAT_CSS, unsafe_allow_html=True)
 
-
     # ------------------------------- SESIÓN ----------------------------------
     for key, default in {
         "form_submitted": False,
@@ -48,10 +47,8 @@ def main() -> None:
         if key not in st.session_state:
             st.session_state[key] = default
 
-
     # ----------------------------- CARGA MODELO ------------------------------
     model, device_err = load_model()
-
 
     # ------------------------------- LAYOUT ----------------------------------
     col1, col2 = st.columns([1, 1.5])

@@ -7,6 +7,7 @@ segura con ``hmac.compare_digest``.
 from __future__ import annotations
 
 import hmac
+
 from .config import get_search_password
 
 

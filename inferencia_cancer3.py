@@ -15,8 +15,7 @@ root = Path(__file__).resolve().parent
 sys.path.insert(0, str(root / "src"))
 sys.path.insert(0, str(root))
 
-from app import main  # noqa: E402
-
+from app import main
 
 if __name__ == "__main__":
     main()

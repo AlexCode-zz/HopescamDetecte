@@ -15,8 +15,8 @@ import pandas as pd
 
 from .config import PATIENT_DB_COLUMNS, resolve_patient_db_path
 
-# Regex robusto para DUI salvadoriano: ### #### #### -> ###-####
-DUI_PATTERN = re.compile(r"^\d{3}-\d{7}$")
+# Regex robusto para DUI salvadoriano: ########-# (8 dígitos, guion, 1 dígito)
+DUI_PATTERN = re.compile(r"^\d{8}-\d$")
 
 
 def default_patient_data() -> dict:
@@ -30,7 +30,9 @@ def default_patient_data() -> dict:
     }
 
 
-def validate_patient_form(*, nombres: str, apellidos: str, edad: int, dui: str) -> str | None:
+def validate_patient_form(
+    *, nombres: str, apellidos: str, edad: int, dui: str
+) -> str | None:
     """Reglas de validación idénticas al formulario de la app original.
 
     Returns ``None`` cuando es válido; retorna una cadena de mensaje de error
@@ -127,7 +129,7 @@ def load_patient_db() -> pd.DataFrame:
                 )
             else:
                 return df
-    except Exception:
+    except Exception:  # noqa: S110, BLE001 — CSV corrupto/inexistente -> df vacío con esquema
         pass
     # No existe ni está corrupto: DataFrame vacío con esquema completo
     return pd.DataFrame(columns=PATIENT_DB_COLUMNS)

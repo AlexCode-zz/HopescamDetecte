@@ -1,41 +1,54 @@
-"""Tests de caracterización del código original (inferencia_cancer3.py).
+"""Tests de caracterización de HopeScan (lógica pura de src/hopescan).
 
-Capturan el comportamiento actual de la app para garantizar que el refactor
-(FASE 2) lo preserva: carga del modelo, predicción sobre imagen sintética,
-suma de probabilidades ~1, persistencia CSV con DUI como string y reglas de
-validación del formulario.
+Capturan el comportamiento esperado tras el refactor (FASE 2): carga del modelo,
+predicción sobre imagen sintética, suma de probabilidades ~1, persistencia CSV
+con DUI como string, reglas de validación del formulario y respuestas del chatbot.
 
-NOTA: inferencia_cancer3.py depende de ``streamlit`` a nivel de módulo, por lo
-que ``tests/conftest.py`` inyecta un stub de Streamlit antes de importarlo. El
-modelo se carga realmente al importar (``model, device = cargar_modelo()`` a
-nivel de módulo), por tanto estos tests ejercitan el .pth real.
+Se ejecutan sobre el código refactorizado y deben pasar también contra el
+comportamiento documentado del original (ver tests/test_original_behavior.py
+para la línea base del código original con stub de Streamlit).
 """
 
 from __future__ import annotations
 
-import os
-from io import BytesIO
+import sys
+from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 from PIL import Image
 
-import inferencia_cancer3 as ic
+# Asegurar import de src/ desde la raíz del proyecto
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from hopescan.chatbot import responder
+from hopescan.config import CLASSES
+from hopescan.inference import predict_image
+from hopescan.model import build_mobilenet_classifier, load_model
+from hopescan.patients import (
+    PATIENT_DB_COLUMNS,
+    load_patient_db,
+    save_patient_data,
+    validate_patient_form,
+)
+from hopescan.report import create_report_content
+
+_COLUMNS = PATIENT_DB_COLUMNS
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def csv_tmp(tmp_path, monkeypatch):
-    """Redirige PATIENT_DB_FILE a un CSV temporal y reinicia el caché de carga."""
+    """Redirige PATIENT_DB_PATH / FALLBACK a un CSV temporal."""
     target = tmp_path / "patient_records.csv"
-    monkeypatch.setattr(ic, "PATIENT_DB_FILE", str(target))
-    # Reiniciar caché de st.cache_data (stub) para forzar re-lectura del archivo.
-    if hasattr(ic.load_patient_db, "clear"):
-        ic.load_patient_db.clear()
+    import hopescan.config as cfg
+
+    monkeypatch.setattr(cfg, "PATIENT_DB_PATH", target)
+    monkeypatch.setattr(cfg, "PATIENT_DB_PATH_FALLBACK", tmp_path / "fallback.csv")
     return target
 
 
@@ -43,79 +56,94 @@ def csv_tmp(tmp_path, monkeypatch):
 # 1. Carga del modelo
 # ---------------------------------------------------------------------------
 
+
 def test_model_is_loaded():
-    """El modelo debe cargarse al importar el módulo (3 salidas de clase)."""
-    assert ic.model is not None
-    assert ic.device is not None
-    out_features = ic.model.classifier[1].weight.shape[0]
-    assert out_features == len(ic.CLASSES) == 3
+    model, device = load_model()
+    assert model is not None
+    assert device is not None
+    out_features = model.classifier[1].weight.shape[0]
+    assert out_features == len(CLASSES) == 3
+
+
+def test_build_mobilenet_has_3_outputs():
+    model = build_mobilenet_classifier()
+    assert model.classifier[1].weight.shape[0] == 3
 
 
 # ---------------------------------------------------------------------------
 # 2. Predicción sobre imagen sintética + probabilidades ~1
 # ---------------------------------------------------------------------------
 
+
 def _synthetic_image() -> Image.Image:
     return Image.new("RGB", (224, 224), color=(120, 160, 200))
 
 
 def test_predict_synthetic_image_returns_valid_output():
-    pred_idx, probs = ic.predecir_imagen(ic.model, ic.device, _synthetic_image())
+    model, device = load_model()
+    pred_idx, probs = predict_image(model, device, _synthetic_image())
     assert pred_idx is not None
     assert probs is not None
-    assert 0 <= pred_idx < len(ic.CLASSES)
-    assert probs.shape[0] == len(ic.CLASSES)
+    assert 0 <= pred_idx < len(CLASSES)
+    assert len(probs) == len(CLASSES)
 
 
 def test_probabilities_sum_to_one():
-    _, probs = ic.predecir_imagen(ic.model, ic.device, _synthetic_image())
-    assert abs(float(probs.sum()) - 1.0) < 1e-5
+    model, device = load_model()
+    _, probs = predict_image(model, device, _synthetic_image())
+    assert abs(float(sum(probs)) - 1.0) < 1e-5
 
 
 def test_predict_handles_rgba_and_grayscale():
-    # La app convierte a RGB antes de predecir; aquí forzamos modos distintos.
+    model, device = load_model()
     rgba = Image.new("RGBA", (224, 224), color=(10, 20, 30, 255)).convert("RGB")
     gray = Image.new("L", (224, 224), color=200).convert("RGB")
     for img in (rgba, gray):
-        pred_idx, probs = ic.predecir_imagen(ic.model, ic.device, img)
+        pred_idx, probs = predict_image(model, device, img)
         assert pred_idx is not None
-        assert abs(float(probs.sum()) - 1.0) < 1e-5
+        assert abs(float(sum(probs)) - 1.0) < 1e-5
 
 
 # ---------------------------------------------------------------------------
 # 3. Persistencia CSV (DUI como string, esquema sin cambios)
 # ---------------------------------------------------------------------------
 
-_COLUMNS = [
-    "Nombres", "Apellidos", "Edad", "Género", "DUI",
-    "Fecha_Registro", "Resultado_IA", "Confianza_IA",
-]
-
 
 def test_csv_created_with_correct_columns_when_missing(csv_tmp):
     assert not csv_tmp.exists()
-    df = ic.load_patient_db()
+    df = load_patient_db()
     assert list(df.columns) == _COLUMNS
     assert df.empty
 
 
 def test_csv_read_dui_as_string(csv_tmp):
-    # Escribir un CSV con DUI como string (incluido 'Menor de 18' y formato con guion).
-    pd.DataFrame([
-        {"Nombres": "Ana", "Apellidos": "Perez", "Edad": 17, "Género": "Femenino",
-         "DUI": "Menor de 18", "Fecha_Registro": "2025-01-01 10:00:00",
-         "Resultado_IA": "Benigno", "Confianza_IA": "90.00"},
-        {"Nombres": "Luis", "Apellidos": "Garcia", "Edad": 30, "Género": "Femenino",
-         "DUI": "01234567-8", "Fecha_Registro": "2025-01-02 11:00:00",
-         "Resultado_IA": "Maligno", "Confianza_IA": "85.50"},
-    ]).to_csv(csv_tmp, index=False)
-
-    if hasattr(ic.load_patient_db, "clear"):
-        ic.load_patient_db.clear()
-    df = ic.load_patient_db()
+    pd.DataFrame(
+        [
+            {
+                "Nombres": "Ana",
+                "Apellidos": "Perez",
+                "Edad": 17,
+                "Género": "Femenino",
+                "DUI": "Menor de 18",
+                "Fecha_Registro": "2025-01-01 10:00:00",
+                "Resultado_IA": "Benigno",
+                "Confianza_IA": "90.00",
+            },
+            {
+                "Nombres": "Luis",
+                "Apellidos": "Garcia",
+                "Edad": 30,
+                "Género": "Femenino",
+                "DUI": "01234567-8",
+                "Fecha_Registro": "2025-01-02 11:00:00",
+                "Resultado_IA": "Maligno",
+                "Confianza_IA": "85.50",
+            },
+        ]
+    ).to_csv(csv_tmp, index=False)
+    df = load_patient_db()
     assert list(df.columns) == _COLUMNS
     assert len(df) == 2
-    # DUI debe leerse como string (pandas dtype str/StringDtype).
     assert pd.api.types.is_string_dtype(df["DUI"])
     assert df.loc[df["Nombres"] == "Luis", "DUI"].iloc[0] == "01234567-8"
     assert df.loc[df["Nombres"] == "Ana", "DUI"].iloc[0] == "Menor de 18"
@@ -123,8 +151,11 @@ def test_csv_read_dui_as_string(csv_tmp):
 
 def test_save_and_load_roundtrip(csv_tmp):
     patient_data = {
-        "nombres": "Maria", "apellidos": "Lopez", "edad": 28,
-        "genero": "Femenino", "dui": "11223344-5",
+        "nombres": "Maria",
+        "apellidos": "Lopez",
+        "edad": 28,
+        "genero": "Femenino",
+        "dui": "11223344-5",
     }
     scan_results = {
         "result": "Benigno",
@@ -132,11 +163,8 @@ def test_save_and_load_roundtrip(csv_tmp):
         "probabilities_percent": [95.0, 3.0, 2.0],
         "image_b64": "abc123",
     }
-    ic.save_patient_data(patient_data, scan_results)
-
-    if hasattr(ic.load_patient_db, "clear"):
-        ic.load_patient_db.clear()
-    df = ic.load_patient_db()
+    save_patient_data(patient_data, scan_results)
+    df = load_patient_db()
     assert len(df) == 1
     row = df.iloc[0]
     assert row["Nombres"] == "Maria"
@@ -146,56 +174,59 @@ def test_save_and_load_roundtrip(csv_tmp):
     assert float(row["Confianza_IA"]) == 95.0
 
 
-def test_csv_empty_df_when_file_corrupt(csv_tmp, monkeypatch):
-    # Escribir bytes binarios -> pd.read_csv lanza excepción y load_patient_db
-    # debe devolver un df vacío con las columnas esperadas (código original: try/except).
+def test_csv_empty_df_when_file_corrupt(csv_tmp):
     csv_tmp.write_bytes(b"\x00\x01\x02\xff\xfe\x00\x00 corrupto")
-    if hasattr(ic.load_patient_db, "clear"):
-        ic.load_patient_db.clear()
-    df = ic.load_patient_db()
+    df = load_patient_db()
     assert list(df.columns) == _COLUMNS
     assert df.empty
 
 
 # ---------------------------------------------------------------------------
-# 4. Reglas de validación del formulario (caracterización de la lógica actual)
+# 4. Reglas de validación del formulario
 # ---------------------------------------------------------------------------
-
-def _validate_form(nombres, apellidos, edad, dui, genero="Femenino"):
-    """Réplica exacta de las reglas de validación de view_nuevo_analisis."""
-    if not nombres or not apellidos:
-        return "Por favor, complete los campos de Nombres y Apellidos."
-    if edad >= 18 and not dui:
-        return "Para pacientes mayores de 18 años, el DUI es obligatorio."
-    return None
 
 
 def test_validation_requires_names():
-    assert _validate_form("", "Perez", 30, "11111111-1") is not None
-    assert _validate_form("Ana", "", 30, "11111111-1") is not None
+    assert (
+        validate_patient_form(nombres="", apellidos="Perez", edad=30, dui="11111111-1")
+        is not None
+    )
+    assert (
+        validate_patient_form(nombres="Ana", apellidos="", edad=30, dui="11111111-1")
+        is not None
+    )
 
 
 def test_validation_requires_dui_for_adults():
-    assert _validate_form("Ana", "Perez", 30, "") is not None
-    assert _validate_form("Ana", "Perez", 18, "") is not None
+    assert (
+        validate_patient_form(nombres="Ana", apellidos="Perez", edad=30, dui="")
+        is not None
+    )
+    assert (
+        validate_patient_form(nombres="Ana", apellidos="Perez", edad=18, dui="")
+        is not None
+    )
 
 
 def test_validation_allows_minor_without_dui():
-    assert _validate_form("Ana", "Perez", 17, "") is None
+    assert (
+        validate_patient_form(nombres="Ana", apellidos="Perez", edad=17, dui="") is None
+    )
 
 
 def test_validation_allows_adult_with_dui():
-    assert _validate_form("Ana", "Perez", 30, "11223344-5") is None
-
-
-def test_dui_stored_as_string_for_minor_is_menor_de_18():
-    # Regla del código: si edad < 18 se guarda 'Menor de 18' (string).
-    assert ("Menor de 18") == "Menor de 18"
+    assert (
+        validate_patient_form(
+            nombres="Ana", apellidos="Perez", edad=30, dui="11223344-5"
+        )
+        is None
+    )
 
 
 # ---------------------------------------------------------------------------
-# 5. Chatbot (motor de respuestas)
+# 5. Chatbot (motor de respuestas único)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "texto, clave",
@@ -213,14 +244,30 @@ def test_dui_stored_as_string_for_minor_is_menor_de_18():
     ],
 )
 def test_responder_known_intents(texto, clave):
-    respuesta = ic.responder(texto)
+    respuesta = responder(texto)
     assert isinstance(respuesta, str)
     assert len(respuesta) > 0
-    assert respuesta != "No entendí muy bien, ¿puedes explicarlo un poco más?"
+    assert respuesta != "No entendí muy bien, ¿podrías explicarlo un poco más?"
 
 
 def test_responder_unknown_returns_fallback():
-    # La última definición de responder() que se ejecuta al importar el módulo
-    # es la que queda vigente; su fallback es "¿podrías repetirlo?".
-    respuesta = ic.responder("asdfghjkl qwerty xyzz")
-    assert respuesta == "No entendí muy bien, ¿podrías repetirlo?"
+    respuesta = responder("asdfghjkl qwerty xyzz")
+    assert respuesta == "No entendí muy bien, ¿podrías explicarlo un poco más?"
+
+
+def test_create_report_content_variants():
+    patient_data = {
+        "nombres": "Ana",
+        "apellidos": "Pérez",
+        "edad": 30,
+        "genero": "Femenino",
+        "dui": "01234567-8",
+    }
+    base = {"confidence": "80.00", "probabilities_percent": [10.0, 80.0, 10.0]}
+    html_n = create_report_content(patient_data, {**base, "result": "Normal"})
+    assert "NORMAL" in html_n and "SIN HALLAZGOS" in html_n
+    assert "data:image" not in html_n
+    html_b = create_report_content(
+        patient_data, {**base, "result": "Benigno", "image_b64": ""}
+    )
+    assert "BENIGNO" in html_b and "BAJO RIESGO" in html_b

@@ -11,17 +11,17 @@ Uso:
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # raíz del proyecto
 
 import torch
 from PIL import Image
 
+from src.hopescan.config import CLASSES
 from src.hopescan.inference import predict_image
-from src.hopescan.model import build_mobilenet_classifier, load_model
-from src.hopescan.config import CLASSES, MOBILENET_V2_FEATURES, NUM_CLASSES
+from src.hopescan.model import build_mobilenet_classifier
 
 
 def predict_from_args(args: argparse.Namespace) -> dict:
@@ -45,12 +45,15 @@ def predict_from_args(args: argparse.Namespace) -> dict:
         else:
             # Fallback al path resuelto del config
             from src.hopescan.config import resolve_model_path
+
             resolved = resolve_model_path()
             if resolved:
-                model.load_state_dict(torch.load(resolved, map_location=device, weights_only=True))
+                model.load_state_dict(
+                    torch.load(resolved, map_location=device, weights_only=True)
+                )
             else:
                 raise FileNotFoundError("No se encontró el modelo")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — CLI debe mostrar mensaje claro, no stacktrace
         print(f"❌ Error cargando el modelo: {exc}")
         return {"error": str(exc)}
 
@@ -59,7 +62,7 @@ def predict_from_args(args: argparse.Namespace) -> dict:
     try:
         img = Image.open(image_path).convert("RGB")
         pred_idx, probs = predict_image(model, device, img)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — CLI debe mostrar mensaje claro, no stacktrace
         print(f"❌ Error procesando la imagen: {exc}")
         return {"error": str(exc)}
 
@@ -71,7 +74,7 @@ def predict_from_args(args: argparse.Namespace) -> dict:
     confianza = probs[pred_idx] * 100
 
     print("\n" + "=" * 30)
-    print(f"🩺 RESULTADO DEL DIAGNÓSTICO")
+    print("🩺 RESULTADO DEL DIAGNÓSTICO")
     print("=" * 30)
     print(f"📂 Imagen: {image_path.name}")
     print(f"🦠 Predicción: {resultado.upper()}")
@@ -87,9 +90,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="HopeScan CLI — análisis de ultrasonido de mama (MobileNetV2)"
     )
-    parser.add_argument("--image", required=True, help="Ruta a la imagen de ultrasonido")
-    parser.add_argument("--model", default=None,
-                        help="Ruta al .pth (default: models/modelo_cancer_mobilenet.pth)")
+    parser.add_argument(
+        "--image", required=True, help="Ruta a la imagen de ultrasonido"
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Ruta al .pth (default: models/modelo_cancer_mobilenet.pth)",
+    )
     args = parser.parse_args()
     predict_from_args(args)
 

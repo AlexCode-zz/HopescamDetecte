@@ -7,8 +7,6 @@ de Streamlit.
 
 from __future__ import annotations
 
-from typing import Tuple
-
 import torch
 import torchvision.transforms as T
 from PIL import Image
@@ -16,15 +14,18 @@ from PIL import Image
 from .config import IMAGE_SIZE, NORM_MEAN, NORM_STD
 
 # Singleton de transformación (idempotencia con st.cache_data / gets reutilizable en tests)
-_TRANSFORM = T.Compose([
-    T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    T.ToTensor(),
-    T.Normalize(mean=NORM_MEAN, std=NORM_STD),
-])
+_TRANSFORM = T.Compose(
+    [
+        T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        T.ToTensor(),
+        T.Normalize(mean=NORM_MEAN, std=NORM_STD),
+    ]
+)
 
 
-def predict_image(model: torch.nn.Module, device: torch.device,
-                   image: Image.Image) -> Tuple[int | None, list[float]]:
+def predict_image(
+    model: torch.nn.Module, device: torch.device, image: Image.Image
+) -> tuple[int | None, list[float]]:
     """Prepara y realiza la predicción sobre ``image``.
 
     Args:
@@ -45,5 +46,5 @@ def predict_image(model: torch.nn.Module, device: torch.device,
             pred_idx = int(outputs.argmax(dim=1).item())
             probs_list = probs.cpu().numpy().tolist()
         return pred_idx, probs_list
-    except Exception as exc:  # NOQA: BLE001 — mimetiza el behavior original
+    except Exception as exc:
         raise RuntimeError(f"Error durante la predicción: {exc}") from exc
