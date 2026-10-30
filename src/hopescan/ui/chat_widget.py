@@ -28,7 +28,9 @@ def render_widget() -> None:
     if user_input:
         st.session_state.chat_messages.append({"role": "user", "content": user_input})
         respuesta = responder(user_input)
-        st.session_state.chat_messages.append({"role": "assistant", "content": respuesta})
+        st.session_state.chat_messages.append(
+            {"role": "assistant", "content": respuesta}
+        )
 
     # Burbuja flotante única que abre/cierra la caja
     st.markdown(

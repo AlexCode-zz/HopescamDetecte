@@ -48,8 +48,8 @@ PATIENT_DB_COLUMNS = [
     "Confianza_IA",
 ]
 DATA_DIR = Path("data")
-PATIENT_DB_PATH = DATA_DIR / PATIENT_DB_FILENAME        # principal (datos reales, ignorado)
-PATIENT_DB_PATH_FALLBACK = Path(PATIENT_DB_FILENAME)     # raíz (compatibilidad histórica)
+PATIENT_DB_PATH = DATA_DIR / PATIENT_DB_FILENAME  # principal (datos reales, ignorado)
+PATIENT_DB_PATH_FALLBACK = Path(PATIENT_DB_FILENAME)  # raíz (compatibilidad histórica)
 
 
 def resolve_model_path() -> Path | None:
@@ -93,7 +93,7 @@ def get_search_password() -> str:
 
         if hasattr(st, "secrets") and "SEARCH_PASSWORD" in st.secrets:  # type: ignore[attr-defined]
             return str(st.secrets["SEARCH_PASSWORD"])  # type: ignore[attr-defined]
-    except Exception:
+    except Exception:  # noqa: S110, BLE001 — fallback silencioso a env/dev si secrets no disponible
         pass
     return os.environ.get("SEARCH_PASSWORD", DEFAULT_SEARCH_PASSWORD)
 

@@ -7,9 +7,10 @@ se probó que carga el state_dict real del .pth sin alterar pesos ni arquitectur
 from __future__ import annotations
 
 import torch
-import torchvision.models as models
+from torchvision import models
 
 from .config import MOBILENET_V2_FEATURES, NUM_CLASSES, resolve_model_path
+
 
 # Instancia MobileNetV2 con classifier apuntado a Linear(1280, len(CLASSES))
 def build_mobilenet_classifier() -> torch.nn.Module:
@@ -35,5 +36,5 @@ def load_model():
         model.load_state_dict(state_dict)
         model.to(device).eval()
         return model, device
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — devolvemos (None, exc) para que la UI avise claramente
         return None, exc

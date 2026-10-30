@@ -7,10 +7,7 @@ médico prominente. Se mantiene ``APP_NAME`` como fuente única para el footer.
 
 from __future__ import annotations
 
-import base64
 from datetime import datetime
-
-import pandas as pd
 
 from .config import APP_NAME
 
@@ -25,10 +22,12 @@ def create_report_content(patient_data: dict, scan_results: dict) -> str:
         return "ERROR: No hay datos de paciente o resultados de escaneo disponibles."
 
     probabilities = scan_results.get("probabilities_percent", [])
-    prob_lines = "".join([
-        f"<li><strong>{cls}:</strong> {p:.2f}%</li>"
-        for cls, p in zip(["Benigno", "Maligno", "Normal"], probabilities)
-    ])
+    prob_lines = "".join(
+        [
+            f"<li><strong>{cls}:</strong> {p:.2f}%</li>"
+            for cls, p in zip(["Benigno", "Maligno", "Normal"], probabilities)
+        ]
+    )
 
     image_b64 = scan_results.get("image_b64", "") or ""
     image_tag = ""
@@ -45,7 +44,9 @@ def create_report_content(patient_data: dict, scan_results: dict) -> str:
     if result_value == "Maligno":
         result_class = "maligno"
         result_text_class = "maligno-text"
-        recommendation_text = "ALTO RIESGO: Se recomienda CONSULTA MÉDICA ESPECIALIZADA URGENTE."
+        recommendation_text = (
+            "ALTO RIESGO: Se recomienda CONSULTA MÉDICA ESPECIALIZADA URGENTE."
+        )
     elif result_value == "Normal":
         result_class = "normal"
         result_text_class = "normal-text"
@@ -54,7 +55,9 @@ def create_report_content(patient_data: dict, scan_results: dict) -> str:
         # Asumimos Benigno por defecto
         result_class = ""
         result_text_class = "benigno-text"
-        recommendation_text = "BAJO RIESGO: Se recomienda SEGUIMIENTO PROFESIONAL REGULAR."
+        recommendation_text = (
+            "BAJO RIESGO: Se recomienda SEGUIMIENTO PROFESIONAL REGULAR."
+        )
 
     style = """
     <style>
@@ -97,7 +100,7 @@ def create_report_content(patient_data: dict, scan_results: dict) -> str:
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Reporte HopeScan - {patient_data.get('apellidos', '')}</title>
+        <title>Reporte HopeScan - {patient_data.get("apellidos", "")}</title>
         {style}
     </head>
     <body>
@@ -105,17 +108,17 @@ def create_report_content(patient_data: dict, scan_results: dict) -> str:
             <div class="header-report">
                 <h1>HopeScan IA</h1>
                 <h2>Diagnóstico Automatizado de Cáncer de Mama</h2>
-                <p>Fecha del Reporte: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p>Fecha del Reporte: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
             </div>
 
             <div class="content-section">
                 <h2>📋 Datos del Paciente</h2>
                 <ul>
-                    <li><strong>Nombres:</strong> {patient_data.get('nombres', 'N/A')}</li>
-                    <li><strong>Apellidos:</strong> {patient_data.get('apellidos', 'N/A')}</li>
-                    <li><strong>Edad:</strong> {patient_data.get('edad', 'N/A')} años</li>
-                    <li><strong>Género:</strong> {patient_data.get('genero', 'N/A')}</li>
-                    <li><strong>DUI:</strong> {patient_data.get('dui', 'N/A')}</li>
+                    <li><strong>Nombres:</strong> {patient_data.get("nombres", "N/A")}</li>
+                    <li><strong>Apellidos:</strong> {patient_data.get("apellidos", "N/A")}</li>
+                    <li><strong>Edad:</strong> {patient_data.get("edad", "N/A")} años</li>
+                    <li><strong>Género:</strong> {patient_data.get("genero", "N/A")}</li>
+                    <li><strong>DUI:</strong> {patient_data.get("dui", "N/A")}</li>
                 </ul>
 
                 {image_tag}
@@ -123,9 +126,9 @@ def create_report_content(patient_data: dict, scan_results: dict) -> str:
                 <h2>🔎 Resultados del Escaneo por Inteligencia Artificial</h2>
                 <div class="result-ia {result_class}">
                     <p class="result-text {result_text_class}">
-                        Clase Predicha: {result_value.upper() if result_value else 'N/A'}
+                        Clase Predicha: {result_value.upper() if result_value else "N/A"}
                     </p>
-                    <p><strong>Nivel de Confianza:</strong> {scan_results.get('confidence', 'N/A')}%</p>
+                    <p><strong>Nivel de Confianza:</strong> {scan_results.get("confidence", "N/A")}%</p>
                     <p><strong>Recomendación del Sistema:</strong> {recommendation_text}</p>
                 </div>
 

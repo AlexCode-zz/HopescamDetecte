@@ -9,24 +9,33 @@ import streamlit as st
 
 ACERCA = "Acerca de: Información y Contactos ℹ️"
 CONTACTO_MEDICO = [
-    ("🏥 Hospital Oncológico del ISSS", [
-        "Teléfono: `2591-5000` ",
-        "Dirección: San Salvador, entre la 25 Avenida Norte y la 1° Calle Poniente, justo frente a la estación de Bomberos y a un costado del Hospital Médico Quirúrgico, con entrada principal frente al Hospital Rosales",
-        "Horarios (generales del ISSS): Lunes a viernes de 7:00 a.m. a 4:00 p.m. o 8:00 a.m. a 4:00 p.m.",
-        "Dirección web: https://www.isss.gob.sv/centros-de-atencion/",
-    ]),
-    ("🎗️ Centro Internacional de Cáncer (CIC)", [
-        "Teléfono: `+503 2506-2001`",
-        "3era Calle Poniente, Block No 122 Colonia Escalón, San Salvador, San Salvador, El Salvador",
-        "Horario: Lunes a Viernes, 8:00 AM - 5:00 PM.",
-        "Dirección web: www.centrodecancer.com.sv.",
-    ]),
-    ("⚖️ Instituto del Cáncer de El Salvador (ICES)", [
-        "Direccion: Dr. Narciso Díaz Bazán, es la 1ª Calle Poniente y 33 Avenida Norte, Colonia Escalón, San Salvador",
-        "Horario: Lunes a Viernes de 6:30 a.m. a 3:30 p.m.",
-        "Teléfono: `+503 2521-8282` `2521-8200`",
-        "Dirección web: ",
-    ]),
+    (
+        "🏥 Hospital Oncológico del ISSS",
+        [
+            "Teléfono: `2591-5000` ",
+            "Dirección: San Salvador, entre la 25 Avenida Norte y la 1° Calle Poniente, justo frente a la estación de Bomberos y a un costado del Hospital Médico Quirúrgico, con entrada principal frente al Hospital Rosales",
+            "Horarios (generales del ISSS): Lunes a viernes de 7:00 a.m. a 4:00 p.m. o 8:00 a.m. a 4:00 p.m.",
+            "Dirección web: https://www.isss.gob.sv/centros-de-atencion/",
+        ],
+    ),
+    (
+        "🎗️ Centro Internacional de Cáncer (CIC)",
+        [
+            "Teléfono: `+503 2506-2001`",
+            "3era Calle Poniente, Block No 122 Colonia Escalón, San Salvador, San Salvador, El Salvador",
+            "Horario: Lunes a Viernes, 8:00 AM - 5:00 PM.",
+            "Dirección web: www.centrodecancer.com.sv.",
+        ],
+    ),
+    (
+        "⚖️ Instituto del Cáncer de El Salvador (ICES)",
+        [
+            "Direccion: Dr. Narciso Díaz Bazán, es la 1ª Calle Poniente y 33 Avenida Norte, Colonia Escalón, San Salvador",
+            "Horario: Lunes a Viernes de 6:30 a.m. a 3:30 p.m.",
+            "Teléfono: `+503 2521-8282` `2521-8200`",
+            "Dirección web: ",
+        ],
+    ),
 ]
 CANCER_INFO = """
 El **Cáncer de Mama** es una enfermedad en la que las células de la mama crecen de forma descontrolada. Es el tipo de cáncer más común en mujeres a nivel mundial.
@@ -61,7 +70,9 @@ def render_sidebar(title: str = ACERCA) -> None:
                     st.markdown(f"*{b}*")
                 st.markdown("---")
 
-        with st.expander("🧠 Información General sobre el Cáncer de Mama", expanded=False):
+        with st.expander(
+            "🧠 Información General sobre el Cáncer de Mama", expanded=False
+        ):
             st.markdown(CANCER_INFO)
 
         with st.expander("⚙️ Guía de Uso Rápido de la Aplicación", expanded=False):
