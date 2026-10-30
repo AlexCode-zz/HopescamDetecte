@@ -1,6 +1,7 @@
-"""Burbuja + caja de chat única y CSS único.
+"""Asistente de chat único (burbuja flotante + historial de mensajes).
 
-Provee: render de mensajes, burbuja flotante, captura de input, motor único de respuestas.
+Usa los componentes nativos de chat de Streamlit (``st.chat_message``,
+``st.chat_input``) y solo el CSS mínimo para la burbuja flotante.
 """
 
 from __future__ import annotations
@@ -19,11 +20,21 @@ def init_chat_state() -> None:
 
 
 def render_widget() -> None:
-    """Renderiza CSS + burbuja + caja de chat única (sin duplicación)."""
+    """Renderiza CSS del chat, historial y input."""
     st.markdown(CHAT_CSS, unsafe_allow_html=True)
     init_chat_state()
 
-    # Captura del input — definido antes de cualquier uso (evita NameError original)
+    # Historial de mensajes en un contenedor con borde
+    chat_container = st.container(border=True)
+    with chat_container:
+        st.caption("Asistente HopeScan — dudas sobre prevención y síntomas")
+        if not st.session_state.chat_messages:
+            st.info("Escribe un mensaje para comenzar la conversación.")
+        for msg in st.session_state.chat_messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+    # Input de chat
     user_input = st.chat_input("Escribe tu mensaje...")
     if user_input:
         st.session_state.chat_messages.append({"role": "user", "content": user_input})
@@ -31,27 +42,24 @@ def render_widget() -> None:
         st.session_state.chat_messages.append(
             {"role": "assistant", "content": respuesta}
         )
+        st.rerun()
 
-    # Burbuja flotante única que abre/cierra la caja
+    # Burbuja flotante para abrir/cerrar el chat
     st.markdown(
         """
-        <div class="chat-bubble" onclick="var box = window.parent.document.getElementById('chatbox'); 
-        box.style.display = (box.style.display === 'none' ? 'block' : 'none');">💬</div>
+        <div class="chat-bubble" onclick="document.querySelector('.chatbox').style.display =
+        (document.querySelector('.chatbox').style.display === 'none' ? 'block' : 'none');">
+            :material/chat:
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Caja del chat (oculta por defecto)
-    chat_header = """
-    <div id="chatbox" class="chatbox" style="display:none;">
-        <h4 style="margin:0; color:#F06292;">Asistente EcoScan</h4>
-        <hr style="margin:5px 0 10px 0;">
-    </div>
-    """
-    st.markdown(chat_header, unsafe_allow_html=True)
-
-    chat_area = st.container()
-    with chat_area:
-        for msg in st.session_state.chat_messages:
-            with st.chat_message(msg["role"]):
-                st.write(msg["content"])
+    # Caja de chat embebida (oculta por defecto)
+    st.markdown(
+        '<div class="chatbox" style="display:none;">',
+        unsafe_allow_html=True,
+    )
+    st.markdown("**Asistente EcoScan**")
+    st.divider()
+    st.markdown("</div>", unsafe_allow_html=True)

@@ -27,11 +27,25 @@ MODEL_CANDIDATES = [
 ]
 
 CLASSES = ["Benigno", "Maligno", "Normal"]
+CLASS_LABELS_ES = {
+    "Benigno": "Benigno",
+    "Maligno": "Maligno o sospechoso",
+    "Normal": "Normal / sin hallazgos",
+}
 NORM_MEAN = [0.485, 0.456, 0.406]
 NORM_STD = [0.229, 0.224, 0.225]
 IMAGE_SIZE = 224
 NUM_CLASSES = len(CLASSES)
 MOBILENET_V2_FEATURES = 1280
+
+# ---------------------------------------------------------------------------
+# Umbrales de confianza (FASE 4: evitar falsos positivos en imágenes no válidas)
+# ---------------------------------------------------------------------------
+# Si la probabilidad de la clase ganadora está por debajo de este valor, el
+# resultado se considera poco fiable y se advierte al usuario sin ocultar la
+# clase predicha (el modelo sigue siendo solo una ayuda informativa).
+CONFIDENCE_WARN_THRESHOLD = 60.0  # advertencia de confianza baja
+CONFIDENCE_UNRELIABLE_THRESHOLD = 40.0  # aviso: imagen posiblemente no es ultrasonido
 
 # ---------------------------------------------------------------------------
 # Base de datos de pacientes (CSV)
