@@ -1,4 +1,4 @@
-"""Contenido de la pestaña 'Buscar Paciente' con autenticación."""
+"""Pestaña 'Buscar Paciente' con autenticación."""
 
 from __future__ import annotations
 
@@ -10,42 +10,58 @@ from ..patients import load_patient_db, search_patients
 
 
 def view_buscar_paciente() -> None:
-    """Pinta la pestaña 'Buscar Paciente' (protegida con contraseña).
+    """Pinta la pestaña 'Buscar Paciente' (protegida con contraseña)."""
+    st.title("Búsqueda de pacientes")
+    st.caption("Acceso restringido a la base de datos de registros.")
 
-    Hereda el comportamiento del código original: autenticación con password,
-    búsqueda por nombre/apellido/DUI y tabla de últimos 10 registros por defecto.
-    """
-    st.subheader("🔒 Búsqueda de Pacientes - Acceso Restringido")
-    st.write("Ingrese la contraseña para acceder a la base de datos de registros.")
+    if not st.session_state.get("auth_search", False):
+        with st.form(key="search_login_form", border=False):
+            password_input = st.text_input(
+                "Contraseña de acceso",
+                type="password",
+                key="password_input",
+                placeholder="Ingresa la contraseña",
+            )
+            ingresar = st.form_submit_button(
+                "Ingresar",
+                type="primary",
+                width="stretch",
+            )
 
-    if not st.session_state.auth_search:
-        password_input = st.text_input(
-            "Contraseña de Acceso", type="password", key="password_input"
-        )
-        if st.button("🔑 Ingresar", type="primary", key="btn_ingresar"):
-            if verify_search_password(password_input):
-                st.session_state.auth_search = True
-                st.success("Acceso concedido. Puede buscar pacientes ahora.")
-            else:
-                st.error("Contraseña incorrecta.")
+            if ingresar:
+                if verify_search_password(password_input):
+                    st.session_state.auth_search = True
+                    st.success("Acceso concedido.")
+                    st.rerun()
+                else:
+                    st.error("Contraseña incorrecta.")
         return
 
-    # Sesión activa — mostrar warning si se está usando fallback dev (D-004)
+    # Advertencia si se usa contraseña por defecto de desarrollo
     if is_dev_password_fallback(get_search_password()):
         st.warning(
-            "⚠️ Modo desarrollo: se está usando la contraseña por defecto SALUD123. Define SEARCH_PASSWORD en st.secrets o variable de entorno para producción."
+            title="Modo desarrollo",
+            body=(
+                "Se está usando la contraseña por defecto (SALUD123). "
+                "Define SEARCH_PASSWORD en st.secrets o variable de entorno para producción."
+            ),
+            icon=":material/info:",
         )
 
-    st.markdown("---")
-    st.subheader("🔍 Base de Datos de Pacientes Registrados")
+    st.divider()
+    st.subheader("Base de datos de pacientes registrados")
 
     df_db = load_patient_db()
     if df_db.empty:
-        st.warning("La base de datos de pacientes está vacía.")
+        st.info("La base de datos de pacientes está vacía.")
         return
 
     search_term = (
-        st.text_input("Buscar por Nombre, Apellido o DUI:", key="search_term")
+        st.text_input(
+            "Buscar por nombre, apellido o DUI",
+            key="search_term",
+            placeholder="Ej: Pérez o 01234567-8",
+        )
         .strip()
         .lower()
     )
@@ -56,22 +72,24 @@ def view_buscar_paciente() -> None:
         if not filtered_df.empty:
             st.dataframe(
                 filtered_df.sort_values(by="Fecha_Registro", ascending=False),
-                use_container_width=True,
+                width="stretch",
+                height=300,
             )
         else:
             st.warning(
                 "No se encontraron pacientes que coincidan con el término de búsqueda."
             )
     else:
-        st.markdown(
-            "Mostrando los últimos 10 registros. Use el campo de búsqueda para filtrar."
+        st.caption(
+            "Mostrando los últimos 10 registros. Usa el campo de búsqueda para filtrar."
         )
         st.dataframe(
             df_db.sort_values(by="Fecha_Registro", ascending=False).head(10),
-            use_container_width=True,
+            width="stretch",
+            height=300,
         )
 
-    st.markdown("---")
-    if st.button("🚪 Cerrar Sesión de Búsqueda", key="btn_cerrar"):
+    st.divider()
+    if st.button("Cerrar sesión de búsqueda", width="stretch", key="btn_cerrar"):
         st.session_state.auth_search = False
         st.rerun()
