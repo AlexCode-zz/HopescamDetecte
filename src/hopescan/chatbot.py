@@ -11,10 +11,11 @@ import re
 
 # Coincidencia tolerante a tildes / mayúsculas -> pattern de substring corta.
 # Ordenados por longitud descendente para evitar cortocircuitos por chunks menores.
+# TODO: Migrar a RAG completo en una versión futura.
 REGISTROS_ECO: list[tuple[re.Pattern[str], str]] = [
     (
-        re.compile(r"que es ecoscan|qué es ecoscan|que es el eco", re.IGNORECASE),
-        "EcoScan es una herramienta diseñada para analizar patrones relacionados con el cáncer de mama mediante inteligencia artificial. No reemplaza a un médico, pero sirve como apoyo informativo para la detección temprana y la educación preventiva.",
+        re.compile(r"que es hopeScan|qué es hopeScan|que es el hope", re.IGNORECASE),
+        "HopeScan es una herramienta de apoyo para la detección de cáncer de mama por ultrasonido en El Salvador. No reemplaza a un médico, pero sirve como apoyo informativo para la detección temprana y la educación preventiva.",
     ),
     (
         re.compile(r"hola|buenos días|buenas|qué tal|hi|hey|hello", re.IGNORECASE),

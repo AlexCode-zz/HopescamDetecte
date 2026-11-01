@@ -1,6 +1,0 @@
-streamlit
-torch
-torchvision
-pandas 
-almoahada numpy
-opencv-python

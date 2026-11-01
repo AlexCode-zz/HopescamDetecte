@@ -94,6 +94,10 @@ def resolve_patient_db_path() -> Path:
 DEFAULT_SEARCH_PASSWORD = "SALUD123"  # valor de desarrollo original
 
 
+# Si no hay SEARCH_PASSWORD configurado, la búsqueda queda deshabilitada
+# con un mensaje claro (no abierta, no con password por defecto).
+
+
 def get_search_password() -> str:
     """Lee la contraseña de búsqueda de secrets/env con fallback de desarrollo.
 
@@ -101,6 +105,9 @@ def get_search_password() -> str:
     1. Variable de entorno ``SEARCH_PASSWORD``.
     2. ``st.secrets["SEARCH_PASSWORD"]`` (cuando se ejecuta bajo Streamlit).
     3. Valor por defecto ``SALUD123`` (solo desarrollo).
+
+    Si no hay SEARCH_PASSWORD configurado, la búsqueda queda deshabilitada
+    con un mensaje claro (no abierta, no con password por defecto).
     """
     if "SEARCH_PASSWORD" in os.environ:
         return os.environ["SEARCH_PASSWORD"]
@@ -111,6 +118,8 @@ def get_search_password() -> str:
             return str(st.secrets["SEARCH_PASSWORD"])  # type: ignore[attr-defined]
     except Exception:  # noqa: S110, BLE001 — fallback silencioso a env/dev si secrets no disponible
         pass
+    if os.environ.get("SEARCH_PASSWORD") is None:
+        raise ValueError("SEARCH_PASSWORD no está configurado. La búsqueda está deshabilitada.")
     return os.environ.get("SEARCH_PASSWORD", DEFAULT_SEARCH_PASSWORD)
 
 
