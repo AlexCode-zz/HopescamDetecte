@@ -26,6 +26,7 @@ def view_buscar_paciente() -> None:
                 "Ingresar",
                 type="primary",
                 width="stretch",
+                key="btn_ingresar",
             )
 
             if ingresar:
