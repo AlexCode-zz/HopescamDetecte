@@ -98,10 +98,12 @@ def get_search_password() -> str:
     """Lee la contraseña de búsqueda de secrets/env con fallback de desarrollo.
 
     Orden de prioridad:
-    1. ``st.secrets["SEARCH_PASSWORD"]`` (cuando se ejecuta bajo Streamlit).
-    2. Variable de entorno ``SEARCH_PASSWORD``.
+    1. Variable de entorno ``SEARCH_PASSWORD``.
+    2. ``st.secrets["SEARCH_PASSWORD"]`` (cuando se ejecuta bajo Streamlit).
     3. Valor por defecto ``SALUD123`` (solo desarrollo).
     """
+    if "SEARCH_PASSWORD" in os.environ:
+        return os.environ["SEARCH_PASSWORD"]
     try:
         import streamlit as st  # noqa: WPS433 (import diferido para no acoplar tests)
 

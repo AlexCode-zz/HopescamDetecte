@@ -93,10 +93,12 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    tab_new, tab_search = st.tabs([
-        ":material/add_circle: Nuevo análisis",
-        ":material/search: Buscar paciente",
-    ])
+    tab_new, tab_search = st.tabs(
+        [
+            ":material/add_circle: Nuevo análisis",
+            ":material/search: Buscar paciente",
+        ]
+    )
 
     with tab_new:
         if model is not None:

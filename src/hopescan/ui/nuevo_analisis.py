@@ -28,9 +28,9 @@ from ..patients import save_patient_data, validate_patient_form
 from ..report import create_report_content
 
 RESULT_COLORS = {
-    "Benigno": "#0E7C7B",      # teal médico
-    "Maligno": "#DC2626",      # rojo de alerta
-    "Normal": "#2563EB",       # azul de normal
+    "Benigno": "#0E7C7B",  # teal médico
+    "Maligno": "#DC2626",  # rojo de alerta
+    "Normal": "#2563EB",  # azul de normal
 }
 
 
@@ -51,21 +51,20 @@ def _render_patient_form() -> None:
     """Paso 1: registro obligatorio del paciente."""
     st.subheader("Paso 1 — Datos del paciente")
 
-    with st.container(border=True):
-        with st.form(key="patient_form", border=False):
-            c1, c2 = st.columns(2, vertical_alignment="bottom")
-            with c1:
-                nombres = st.text_input(
-                    "Nombres del paciente",
-                    placeholder="Juan",
-                    key="nombres_input",
-                )
-            with c2:
-                apellidos = st.text_input(
-                    "Apellidos del paciente",
-                    placeholder="Pérez",
-                    key="apellidos_input",
-                )
+    with st.container(border=True), st.form(key="patient_form", border=False):
+        c1, c2 = st.columns(2, vertical_alignment="bottom")
+        with c1:
+            nombres = st.text_input(
+                "Nombres del paciente",
+                placeholder="Juan",
+                key="nombres_input",
+            )
+        with c2:
+            apellidos = st.text_input(
+                "Apellidos del paciente",
+                placeholder="Pérez",
+                key="apellidos_input",
+            )
 
             c3, c4 = st.columns(2, vertical_alignment="bottom")
             with c3:
@@ -97,6 +96,7 @@ def _render_patient_form() -> None:
                 label="Guardar datos y continuar al análisis",
                 type="primary",
                 width="stretch",
+                key="btn_guardar_form",
             )
 
             if submit_button:
@@ -114,9 +114,7 @@ def _render_patient_form() -> None:
                         "dui": dui if edad >= 18 else "Menor de 18",
                     }
                     st.session_state.form_submitted = True
-                    st.success(
-                        "Datos guardados. Ahora sube la imagen de ultrasonido."
-                    )
+                    st.success("Datos guardados. Ahora sube la imagen de ultrasonido.")
                     st.rerun()
 
 
@@ -133,14 +131,12 @@ def _render_image_upload() -> Image.Image | None:
     )
 
     if uploaded_file is None:
-        st.info(
-            "Sube una imagen de ultrasonido de mama para iniciar el análisis."
-        )
+        st.info("Sube una imagen de ultrasonido de mama para iniciar el análisis.")
         return None
 
     try:
         img = Image.open(uploaded_file).convert("RGB")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         st.error(f"No se pudo leer la imagen: {exc}")
         return None
 
@@ -246,7 +242,9 @@ def _render_results(model, device, image: Image.Image) -> None:
                 label="Clase predicha",
                 value=resultado.upper(),
                 delta=f"{confianza:.2f}% de confianza",
-                delta_color="normal" if confianza >= CONFIDENCE_WARN_THRESHOLD else "inverse",
+                delta_color="normal"
+                if confianza >= CONFIDENCE_WARN_THRESHOLD
+                else "inverse",
             )
 
     # Advertencias de confianza (sin ocultar el resultado mostrado)
@@ -300,9 +298,7 @@ def _render_report_download() -> None:
     st.markdown("---")
     st.subheader("Descargar reporte")
 
-    report_content = create_report_content(
-        st.session_state.patient_data, results
-    )
+    report_content = create_report_content(st.session_state.patient_data, results)
     st.download_button(
         label="Descargar reporte en HTML",
         data=report_content,
