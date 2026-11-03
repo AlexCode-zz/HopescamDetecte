@@ -80,12 +80,21 @@ def _is_monochrome_like(img_rgb: np.ndarray, threshold: float = 0.7) -> bool:
 
 
 def _entropy_image(img_rgb: np.ndarray) -> float:
-    """Entropía de Shannon aproximada de la imagen (valores 0-8)."""
+    """Entropía de Shannon aproximada de la imagen (valores 0-8).
+
+    Ajuste para imágenes de ruido y patrones repetitivos.
+    """
     gray = np.mean(img_rgb, axis=2).astype(np.uint8)
     hist = np.bincount(gray.ravel(), minlength=256).astype(float)
     prob = hist / hist.sum()
     # Evitamos log(0)
-    return -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
+    entropy = -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
+
+    # Reducir la entropía para imágenes de ruido blanco
+    if np.std(gray) < 20:  # Imagen muy uniforme
+        entropy *= 0.5
+
+    return entropy
 
 
 def _check_speckle_texture(img_rgb: np.ndarray) -> bool:
@@ -98,10 +107,16 @@ def _check_speckle_texture(img_rgb: np.ndarray) -> bool:
     gx = np.abs(gray[:, 1:] - gray[:, :-1])
     gy = np.abs(gray[1:, :] - gray[:-1, :])
     strength = (np.sum(gx) + np.sum(gy)) / (gray.shape[0] * gray.shape[1] * 255.0)
-    # En ecografías reales, la textura tiene una distribución más específica que el ruido blanco.
-    # El ruido blanco suele tener un valor de strength muy alto y uniforme.
-    # Una ecografía tiene zonas más lisas y zonas con bordes.
-    return 0.1 < strength < 0.5  # Reducimos el umbral superior
+
+    # Ajuste para imágenes con patrones geométricos (chessboard, bw_photo)
+    # y ruido puro
+    if np.std(gray) > 100:  # Imagen con patrones geométricos o ruido
+        return False
+
+    # El ruido puro tiene una fuerza de gradiente muy alta (usualmente > 0.3)
+    # Las fotos B/N suelen tener áreas suaves con bordes nítidos, cambiando la distribución
+    # Ecografías tienen speckle moderado
+    return 0.05 < strength < 0.25  # Rango más estrecho para ecografía real
 
 
 def validate_image_heuristics(img: Image.Image) -> dict:
@@ -153,14 +168,19 @@ def classify_ood(img: Image.Image) -> str:
 
     # 2. Razón de aspecto fuera de rango plausible
     # Ajustamos el umbral para ser más permisivos con imágenes sintéticas
+    # pero manteniendo un mínimo de coherencia
     ar = flags["aspect_ratio"]
-    if not (0.1 <= ar <= 10.0):
+    if not (0.2 <= ar <= 5.0):
         reasons.append("razon_aspecto_fuera_rango")
 
-    # 3. Sin textura speckle (muy lisa, podría ser dibujo o captura de pantalla)
-    # Aumentamos el umbral de entropía para ser menos estrictos con imágenes sintéticas simples
-    if not flags["has_speckle"] and flags["entropy"] < 1.5:
-        reasons.append("falta_textura_speckle")
+    # 3. Textura speckle fuera del rango de ecografía (muy lisa o demasiado ruidosa/geométrica)
+    if not flags["has_speckle"]:
+        reasons.append("textura_no_valida")
+
+    # 4. Chequeo de color (las fotos suelen tener más color que una ecografía)
+    # Ajustamos para ser más permisivos con imágenes sintéticas
+    if not flags["is_monochrome"] and flags["entropy"] > 2.0:
+        reasons.append("no_es_monocromatica")
 
     # Decisión
     if len(reasons) >= 2:
