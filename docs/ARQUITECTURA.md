@@ -1,117 +1,148 @@
 # Arquitectura — HopeScan
 
-Diagrama de flujo y estructura del sistema refactorizado.
+Diagrama de flujo y estructura del sistema refactorizado (2026-11-03).
 
 ## Diagrama de flujo (Mermaid)
 
 ```mermaid
 flowchart TD
-    Usuario((Usuario)) -->|streamlit run app.py| App[app.py - Entry Point Streamlit]
-    
-    App --> Sidebar[Columna Izquierda: Acerca / Contactos Médicos / Guía]
-    App --> Tabs[Pestañas: Nuevo Análisis | Buscar Paciente]
-    
-    Tabs --> NA[Nuevo Análisis]
-    Tabs --> BP[Buscar Paciente]
+    U((Usuario)) --> App[app.py — entrypoint Streamlit]
 
-    subgraph Flujo Nuevo Análisis
-        NA --> Form[Formulario: Nombres, Apellidos, Edad, Género, DUI]
-        Form --> Valid{Validación}
-        Valid -->|Inválido| Err[st.error - mensaje]
-        Valid -->|Válido| Upload[Subida Imagen .png/.jpg/.jpeg]
-        Upload --> Analizar[Botón Iniciar Análisis Predictivo]
-        Analizar --> Modelo[(Modelo MobileNetV2 + pesos .pth)]
-        Modelo --> Pred[predicción: clase + probabilidades]
-        Pred --> Guardar[Guardar CSV paciente_records.csv]
-        Guardar --> Resultados[Mostrar resultados + métrica + gráfico]
-        Resultados --> Descarga[Descargar Reporte HTML]
+    App --> Sidebar[Sidebar: estado, aviso, guía, contactos]
+    App --> Tabs[Pestañas: Nuevo análisis | Buscar paciente | Asistente educativo]
+
+    subgraph Analisis[Flujo de análisis seguro]
+        Tabs --> Form[Formulario + consentimiento]
+        Form --> Demo{¿Modo demostración?}
+        Demo -->|Sí| Synthetic[Ecografía sintética versionada]
+        Demo -->|No| Upload[Subida de imagen]
+        Synthetic --> Validate[Preparar imagen y heurísticas OOD]
+        Upload --> Validate
+        Validate -->|No parece ecografía| Reject[no_es_ecografia_mamaria: sin clase]
+        Validate -->|Válida| Model[MobileNetV2: logits]
+        Model --> Calib[Calibración por temperatura + energy score]
+        Calib --> Decision{Decisión final}
+        Decision -->|Confianza o margen bajos| NoConc[valida_no_concluyente: sin clase]
+        Decision -->|Confiable| Confiable[valida_confiable: clase + probabilidades + Grad-CAM]
+        Confiable --> Save[Guardar CSV local]
+        Confiable --> Report[Reporte HTML seguro]
+        NoConc --> Report
     end
 
-    subgraph Flujo Búsqueda
-        BP --> Login[Contraseña de Acceso]
-        Login -->|Correcta| DB[Cargar CSV pacientes]
-        Login -->|Incorrecta| Err2[Contraseña incorrecta]
-        DB --> Buscar[Campo búsqueda nombre/apellido/DUI]
-        Buscar --> Tabla[Tabla últimos 10 / filtrados]
+    subgraph Busqueda[Flujo de búsqueda]
+        Tabs --> Password{¿SEARCH_PASSWORD configurada?}
+        Password -->|No| Disabled[Búsqueda deshabilitada]
+        Password -->|Sí| Login[Login con compare_digest + límite de intentos]
+        Login --> DB[(data/patient_records.csv)]
+        DB --> Table[Tabla con DUI enmascarado]
     end
 
-    subgraph Chatbot
-        Usuario --> Burbuja[Burbuja flotante 💬]
-        Burbuja --> Caja[Caja de chat única]
-        Caja --> Motor[motor responder() - reglas únicas]
+    subgraph RAG[Flujo del asistente]
+        Tabs --> Guardrails[Guardrails: crisis, urgencia, diagnóstico, medicación, injection]
+        Guardrails --> Retrieve[TF-IDF sobre rag/knowledge]
+        Retrieve --> LLM{¿Claude configurado?}
+        LLM -->|Sí| Claude[Claude + contexto + citas]
+        LLM -->|No| Extractive[Respuesta extractiva + citas]
+        Claude --> Sources[Fuentes citadas]
+        Extractive --> Sources
     end
 
-    subgraph Capa Lógica src/hopescan
-        Config[config.py - constantes, rutas, secrets]
-        Model[model.py - carga del modelo]
-        Infer[inference.py - preprocesamiento + predicción]
-        Patients[patients.py - CSV, validaciones, búsqueda]
-        Report[report.py - HTML reporte]
-        Auth[auth.py - hmac.compare_digest]
-        Chat[chatbot.py - motor único de respuestas]
+    subgraph Logica[Capa lógica src/hopescan]
+        Config[config.py]
+        OOD[ood/ — heurísticas + energy]
+        Inference[inference.py — analyze_image]
+        GradCAM[gradcam.py]
+        Patients[patients.py — CSV, DUI, búsqueda]
+        ReportMod[report.py — HTML escapado]
+        Auth[auth.py — contraseña + limiter]
+        RAGMod[rag/ — chunking, retriever, guardrails, chat]
     end
 
     App --> Config
-    App --> Model
-    App --> Infer
-    NA --> Patients
-    NA --> Report
-    BP --> Patients
-    BP --> Auth
-    Burbuja --> Chat
-
-    style Usuario fill:#f9f,stroke:#333
-    style Modelo fill:#bbf,stroke:#333
-    style DB fill:#bfb,stroke:#333
+    Validate --> OOD
+    Model --> Inference
+    Inference --> GradCAM
+    Confiable --> Patients
+    Report --> ReportMod
+    Login --> Auth
+    Retrieve --> RAGMod
 ```
 
 ## Estructura de directorios
 
 ```
 .
-├─ app.py                         # entrypoint Streamlit (orquesta layout + tabs)
-├─ inferencia_cancer3.py          # shim: from app import main; main()
+├─ app.py                          # entrypoint Streamlit (layout + 3 pestañas)
+├─ inferencia_cancer3.py           # shim: from app import main; main()
 ├─ src/hopescan/
-│  ├─ config.py                   # constantes, rutas con pathlib, lectura de secrets/env
-│  ├─ model.py                    # cargar_modelo (torch.load weights_only=True)
-│  ├─ inference.py                # transforms + predecir_imagen (puro, sin Streamlit)
-│  ├─ patients.py                 # load/save CSV atómico, validaciones, búsqueda
-│  ├─ report.py                   # create_report_content (HTML)
-│  ├─ auth.py                     # verificación de contraseña (hmac.compare_digest)
-│  ├─ chatbot.py                  # UN solo motor de respuestas
+│  ├─ config.py                    # constantes, rutas, estados OOD, secretos
+│  ├─ model.py                     # MobileNetV2 + torch.load(weights_only=True)
+│  ├─ inference.py                 # predict_logits, analyze_image, classify_ood
+│  ├─ gradcam.py                   # Grad-CAM con hooks de PyTorch
+│  ├─ patients.py                  # CSV atómico, validaciones, búsqueda, mask_dui
+│  ├─ report.py                    # HTML escapado según estado OOD
+│  ├─ auth.py                      # compare_digest + AttemptLimiter
+│  ├─ chatbot.py                   # fallback de reglas (saludos)
+│  ├─ ood/__init__.py              # heurísticas, energy score, decisión combinada
+│  ├─ rag/
+│  │  ├─ chunking.py               # Markdown → fragmentos
+│  │  ├─ retriever.py              # TF-IDF + cobertura de términos
+│  │  ├─ guardrails.py             # crisis, urgencia, diagnóstico, medicación, injection
+│  │  └─ chat.py                   # guardrails → Claude opcional → extractivo
 │  └─ ui/
-│     ├─ styles.py                # CSS unificado (una sola copia)
-│     ├─ nuevo_analisis.py        # pestaña Nuevo Análisis
-│     ├─ buscar_paciente.py       # pestaña Buscar Paciente
-│     ├─ sidebar_info.py          # columna izquierda
-│     └─ chat_widget.py           # burbuja + caja de chat única
-├─ cli/predict.py                 # CLI argparse (--image, --model), 3 clases
-├─ models/modelo_cancer_mobilenet.pth   # pesos (fallback a raíz)
+│     ├─ nuevo_analisis.py         # formulario, consentimiento, demo, resultado
+│     ├─ buscar_paciente.py        # login, búsqueda, DUI enmascarado
+│     ├─ sidebar_info.py           # estado, aviso, guía, contactos
+│     └─ chat_widget.py            # chat nativo con fuentes y sugerencias
+├─ cli/predict.py                  # CLI argparse (--image, --model)
+├─ models/ood_calibration.json     # umbrales provisionales + métricas null
+├─ modelo_cancer_mobilenet.pth     # pesos (fallback a raíz)
+├─ rag/knowledge/*.md              # documentos de ejemplo para el RAG
+├─ assets/demo/ecografia_sintetica.png
 ├─ data/
-│  ├─ patient_records.csv         # REAL (ignorado por .gitignore)
-│  └─ sample_patient_records.csv  # 5 filas ficticias (versionado)
+│  ├─ patient_records.csv          # REAL (ignorado por .gitignore)
+│  └─ sample_patient_records.csv   # filas ficticias (versionado)
 ├─ tests/
-│  ├─ test_characterization.py    # caracterización (código original/refactor)
-│  ├─ test_hopescan.py            # unidad src/hopescan
-│  └─ test_smoke_apptest.py       # flujo UX con streamlit.testing.AppTest
-├─ docs/ (AUDITORIA.md, DECISIONES.md, ARQUITECTURA.md)
+│  ├─ test_characterization.py     # caracterización de la lógica
+│  ├─ test_hopescan.py             # unidad de src/hopescan
+│  ├─ test_ood.py                  # contrato OOD + Grad-CAM + energy
+│  ├─ test_rag.py                  # recuperación, guardrails, auth
+│  ├─ test_report.py               # reporte HTML seguro
+│  └─ test_smoke_apptest.py        # flujo UX con streamlit.testing.AppTest
+├─ docs/ (AUDITORIA, DECISIONES, ARQUITECTURA, PROGRESO, LIMPIEZA_HISTORIAL)
 ├─ .github/workflows/ci.yml
-├─ requirements.txt, requirements-dev.txt, .env.example, .gitignore, README.md
+└─ requirements*.txt, .env.example, .streamlit/secrets.toml.example, .gitignore
 ```
 
 ## Flujo de datos
 
-1. **Entrada**: Usuario llena formulario (validación: nombres/apellidos no vacíos, edad 0–120, DUI obligatorio ≥18 con formato `########-#`).
-2. **Imagen**: Se abre con PIL, se convierte a RGB, se aplica `Resize(224)` + `Normalize(ImageNet)` y `ToTensor()`.
-3. **Inferencia**: MobileNetV2 con `Linear(1280, 3)` + softmax → clase y probabilidades (suman ~1).
-4. **Persistencia**: Registro atómico a `data/patient_records.csv` (escribir a temp + `os.replace`), DUI como string, `current_dui` evita duplicados en reruns.
-5. **Reporte**: HTML descargable con imagen en base64, probabilidades, recomendación y aviso médico prominente.
-6. **Búsqueda**: Protegida con contraseña (`st.secrets`/`SEARCH_PASSWORD`/`SALUD123` fallback, `hmac.compare_digest`).
-7. **Chatbot**: Motor único `responder()` con reglas tolerantes a tildes/mayúsculas, burbuja y caja únicas.
+1. **Entrada:** el formulario valida nombres/apellidos, edad 0–120 y DUI
+   obligatorio solo para mayores de 18 (`########-#`). El consentimiento es
+   obligatorio antes de analizar.
+2. **Preparación:** PIL abre la imagen, corrige EXIF, convierte a RGB, valida
+   tamaño/formato y calcula las heurísticas OOD. Una imagen inválida no llega al
+   modelo.
+3. **Inferencia:** MobileNetV2 con `Linear(1280, 3)` produce logits. Se aplica
+   calibración por temperatura y softmax; se calcula el energy score.
+4. **Decisión:** `combine_decision()` devuelve `valida_confiable`,
+   `valida_no_concluyente` o `no_es_ecografia_mamaria`. La UI solo muestra clase,
+   probabilidades y Grad-CAM en el primer estado.
+5. **Persistencia:** registro atómico en `data/patient_records.csv` (temp +
+   `os.replace`), DUI como string y sin guardar imágenes. En modo demostración no
+   se escribe nada.
+6. **Reporte:** HTML con escape de datos del paciente, estado, confianza,
+   probabilidades, Grad-CAM opcional y aviso médico. Nunca inventa una clase.
+7. **Búsqueda:** deshabilitada si no hay `SEARCH_PASSWORD`; si existe, usa
+   `hmac.compare_digest` y un límite de intentos. El DUI se enmascara en la tabla.
+8. **Chat:** guardrails primero; luego recuperación local TF-IDF y respuesta
+   extractiva con citas. Si hay claves de Anthropic, Claude redacta usando solo
+   el contexto recuperado. Sin claves no hay llamadas de red.
 
-## Decisiones clave (ver docs/DECISIONES.md)
+## Decisiones clave (ver `docs/DECISIONES.md`)
 
-- Modelo entrenado con 3 clases (`classifier.1.weight` = `(3, 1280)`); `inferencia_cancer2.py` usaba 2 (desalineado).
+- Modelo entrenado con 3 clases (`classifier.1.weight` = `(3, 1280)`).
 - `torch.load(..., weights_only=True)` verificado y mantenido.
-- Nombre del producto unificado internamente como `APP_NAME = "HopeScan"`.
-- `patient_records.csv` (datos reales, incluidos menores) sacado del control de versiones.
+- Nombre del producto unificado como `APP_NAME = "HopeScan"`.
+- `patient_records.csv` real fuera del árbol actual, pero todavía en el historial
+  (commit `5cd0be5`); purga pendiente de confirmación.
+- OOD y calibración son provisionales: no hay métricas clínicas ni dataset real.

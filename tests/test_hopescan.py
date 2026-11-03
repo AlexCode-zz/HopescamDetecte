@@ -198,7 +198,8 @@ def test_create_report_content_shape():
     html = create_report_content(patient_data, scan_results)
     assert "MALIGNO" in html
     assert "85.00" in html
-    assert "⚠️ Aviso Importante" in html
+    assert "⚠️ Aviso Importante" not in html
+    assert "Aviso importante" in html
     assert "data:image/jpeg;base64,dGVzdA==" in html
     assert "NO SUSTITUYE" in html
 

@@ -33,18 +33,24 @@ def default_patient_data() -> dict:
 def validate_patient_form(
     *, nombres: str, apellidos: str, edad: int, dui: str
 ) -> str | None:
-    """Reglas de validación idénticas al formulario de la app original.
+    """Reglas del formulario actual: DUI obligatorio solo para adultos.
 
     Returns ``None`` cuando es válido; retorna una cadena de mensaje de error
     cuando hay problema (comportamiento conservador: no lanza ValueError en la
     app — se usará directamente con ``st.error``).
     """
-    if not nombres or not apellidos:
+    if not nombres or not nombres.strip() or not apellidos or not apellidos.strip():
         return "Por favor, complete los campos de Nombres y Apellidos."
+    if len(nombres.strip()) > 120 or len(apellidos.strip()) > 120:
+        return "Nombres y apellidos no pueden superar los 120 caracteres."
     if edad < 0 or edad > 120:
         return "Edad debe estar entre 0 y 120."
     if edad >= 18 and not dui:
         return "Para pacientes mayores de 18 años, el DUI es obligatorio."
+    if edad >= 18 and not DUI_PATTERN.match(str(dui).strip()):
+        return "El DUI debe tener el formato ########-# (8 dígitos, guion y dígito verificador)."
+    if edad < 18 and dui and str(dui).strip() not in {"", "Menor de 18"}:
+        return "No se debe registrar el DUI de una persona menor de edad."
     return None
 
 
@@ -95,7 +101,7 @@ def atomic_write_csv(path: Path, df: pd.DataFrame) -> None:
 
     Previene corrupciones concurrentes (FASE 3).
     """
-    assert path.parent.exists(), f"Ruta padre no existe: {path.parent}"
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
         prefix=".tmp-hopescan-", suffix=".csv", dir=str(path.parent)
     )
@@ -154,10 +160,29 @@ def search_patients(df: pd.DataFrame, term: str) -> pd.DataFrame:
 
 
 def check_dui(dui: str) -> bool:
-    """Valida DUI format (###-####); nunca bloqueará registros con 'Menor de 18'."""
+    """Valida el formato del DUI salvadoreño (``########-#``).
+
+    ``"Menor de 18"`` se acepta como marcador histórico para no bloquear
+    registros existentes; no es un DUI.
+    """
     if not dui:
         return False
     stripped = str(dui).strip()
     if stripped == "Menor de 18":
-        return True  # není válido internamente, pero el flujo de la app lo bloquea
+        return True
     return bool(DUI_PATTERN.match(stripped))
+
+
+def mask_dui(dui: str) -> str:
+    """Enmascara un DUI para mostrarlo en la UI.
+
+    Mantiene únicamente los dos últimos dígitos: ``01234567-8`` → ``••••••67-8``.
+    Los menores de edad se muestran como ``Menor de 18`` (sin DUI).
+    """
+    value = str(dui or "").strip()
+    if not value or value == "Menor de 18":
+        return value
+    digits = "".join(char for char in value if char.isdigit())
+    if len(digits) < 3:
+        return "••••"
+    return f"••••••{digits[-3:-1]}-{digits[-1]}"

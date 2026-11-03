@@ -11,7 +11,7 @@ import re
 
 # Coincidencia tolerante a tildes / mayúsculas -> pattern de substring corta.
 # Ordenados por longitud descendente para evitar cortocircuitos por chunks menores.
-# TODO: Migrar a RAG completo en una versión futura.
+# Se conserva como fallback de reglas; el asistente principal usa RAG con citas.
 REGISTROS_ECO: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(r"que es hopeScan|qué es hopeScan|que es el hope", re.IGNORECASE),
@@ -78,7 +78,7 @@ REGISTROS_ECO: list[tuple[re.Pattern[str], str]] = [
             r"por que consultar a un medico|por qué consultar|qué consultar",
             re.IGNORECASE,
         ),
-        "Porque EcoScan no da diagnósticos. Solo un especialista puede confirmar la naturaleza de un hallazgo mediante estudios clínicos. Consultar a tiempo evita complicaciones y mejora los resultados.",
+        "Porque HopeScan no da diagnósticos. Solo un especialista puede confirmar la naturaleza de un hallazgo mediante estudios clínicos. Consultar a tiempo evita complicaciones y mejora los resultados.",
     ),
     (
         re.compile(r"gracias|muchas gracias|thank you", re.IGNORECASE),
@@ -114,7 +114,7 @@ REGISTROS_ECO: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"probabilidad|porcentaje", re.IGNORECASE),
-        "Las probabilidades dependen de múltiples factores: tipo de lesión, antecedentes, edad, y estudios clínicos. El análisis de EcoScan no da porcentajes de diagnóstico, solo ayuda a identificar patrones que deben revisarse.",
+        "Las probabilidades dependen de múltiples factores: tipo de lesión, antecedentes, edad, y estudios clínicos. El análisis de HopeScan no da porcentajes de diagnóstico, solo ayuda a identificar patrones que deben revisarse.",
     ),
     (
         re.compile(r"peligroso|riesgoso|sobre todo peligroso", re.IGNORECASE),
@@ -122,7 +122,7 @@ REGISTROS_ECO: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"test|analisis|análisis", re.IGNORECASE),
-        "El análisis de EcoScan revisa patrones visuales en imágenes y determina si coinciden con categorías benignas o malignas basadas en datos de entrenamiento. No es un diagnóstico médico, solo una herramienta informativa.",
+        "El análisis de HopeScan revisa patrones visuales en imágenes y determina si coinciden con categorías benignas o malignas basadas en datos de entrenamiento. No es un diagnóstico médico, solo una herramienta informativa.",
     ),
     (
         re.compile(r"funcionas|cómo funcionas|funciona", re.IGNORECASE),

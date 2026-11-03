@@ -1,0 +1,3 @@
+# Dependencias opcionales del chatbot con LLM (Claude).
+# Sin ellas, el chat funciona en modo extractivo con citas.
+anthropic>=0.40

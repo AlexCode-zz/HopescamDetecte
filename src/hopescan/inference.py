@@ -1,25 +1,42 @@
 """Lógica pura de inferencia (sin dependencias de Streamlit).
 
-Carga transforms idénticos al entrenamiento (Resize 224, Normalize ImageNet)
-y realiza la predicción. ``predecir_imagen`` no haceLogging ni altera estados
-de Streamlit.
+Mantiene la API histórica ``predict_image`` y añade el pipeline completo
+``analyze_image``: validación OOD → energy score → calibración → Grad-CAM.
 
-FASE 2: Validación OOD (Out-of-Domain) para rechazar imágenes que no son
-ecografías mamarias antes de clasificar.
+La regla de oro: si la imagen no parece una ecografía mamaria, **no se devuelve
+ninguna clase ni ningún porcentaje**.
 """
 
 from __future__ import annotations
 
-import math
+from typing import Any
 
 import numpy as np
 import torch
 import torchvision.transforms as T
 from PIL import Image
 
-from .config import IMAGE_SIZE, NORM_MEAN, NORM_STD
+from .config import (
+    CLASSES,
+    IMAGE_SIZE,
+    NORM_MEAN,
+    NORM_STD,
+    OOD_NO_ES_ECOGRAFIA,
+    OOD_VALIDA_CONFIABLE,
+    OOD_VALIDA_NO_CONCLUYENTE,
+    load_ood_config,
+)
+from .gradcam import explain_prediction
+from .ood import (
+    InvalidImageError,
+    combine_decision,
+    compute_features,
+    energy_score,
+    heuristic_verdict,
+    prepare_image,
+)
 
-# Singleton de transformación (idempotencia con st.cache_data / gets reutilizable en tests)
+# Transformación idéntica al entrenamiento.
 _TRANSFORM = T.Compose(
     [
         T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
@@ -29,245 +46,240 @@ _TRANSFORM = T.Compose(
 )
 
 
-def predict_image(
+def _prepare_tensor(image: Image.Image, device: torch.device) -> torch.Tensor:
+    rgb = image.convert("RGB") if image.mode != "RGB" else image
+    return _TRANSFORM(rgb).unsqueeze(0).to(device)
+
+
+def predict_logits(
     model: torch.nn.Module, device: torch.device, image: Image.Image
-) -> tuple[int | None, list[float]]:
-    """Prepara y realiza la predicción sobre ``image``.
-
-    Args:
-        model: modelo MobileNetV2 listo para inferencia.
-        device: dispositivo destino.
-        image: imagen (RGB/RGBA/escala de grises) -> se convierte a RGB.
-
-    Returns:
-        ``(pred_idx, probs)`` donde ``pred_idx`` es la clase ganadora (0..2) o
-        ``None`` en error, y ``probs`` es una lista de floats que suma 1.
-    """
+) -> tuple[np.ndarray, np.ndarray]:
+    """Devuelve ``(logits, probabilidades_softmax)`` para una imagen."""
     try:
-        img = image.convert("RGB") if image.mode != "RGB" else image
-        img_tensor = _TRANSFORM(img).unsqueeze(0).to(device)
+        tensor = _prepare_tensor(image, device)
         with torch.no_grad():
-            outputs = model(img_tensor)
-            probs = torch.nn.functional.softmax(outputs, dim=1)[0]
-            pred_idx = int(outputs.argmax(dim=1).item())
-            probs_list = probs.cpu().numpy().tolist()
-        return pred_idx, probs_list
+            output = model(tensor)
+            logits = output[0].detach().cpu().numpy().astype(np.float64)
+        shifted = np.exp(logits - np.max(logits))
+        probs = shifted / shifted.sum()
+        return logits, probs
     except Exception as exc:
         raise RuntimeError(f"Error durante la predicción: {exc}") from exc
 
 
-# ---------------------------------------------------------------------------
-# Heurísticas básicas para detectar si una imagen parece una ecografía B-mode
-# ---------------------------------------------------------------------------
-
-def _is_monochrome_like(img_rgb: np.ndarray, threshold: float = 0.7) -> bool:
-    """Detecta si la imagen tiene aspecto monocromático (ecografía típica).
-
-    Una ecografía B-mode tiende a ser casi monocromática (grises).
-    Calculamos la dispersión entre canales RGB.
-    """
-    # Medimos la dispersión entre canales RGB.
-    # Para una imagen verdaderamente monocromática, todos los canales deben
-    # tener la misma media y desviación muy baja.
-    stds = np.std(img_rgb, axis=(0, 1))
-    means = np.mean(img_rgb, axis=(0, 1))
-
-    # Una imagen es "monocromática-like" si:
-    # 1. Todos los canales tienen desviación muy baja (similar entre sí)
-    # 2. Los canales tienen la misma media (no hay tono dominante)
-    return (float(np.mean(stds)) < (255.0 * threshold / 3.0) and
-            float(np.std(means)) < 10.0)  # Las medias deben ser similares (gris puro)
-
-
-def _entropy_image(img_rgb: np.ndarray) -> float:
-    """Entropía de Shannon aproximada de la imagen (valores 0-8).
-
-    Ajuste para imágenes de ruido y patrones repetitivos.
-    """
-    gray = np.mean(img_rgb, axis=2).astype(np.uint8)
-    hist = np.bincount(gray.ravel(), minlength=256).astype(float)
-    prob = hist / hist.sum()
-    # Evitamos log(0)
-    entropy = -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
-
-    # Reducir la entropía para imágenes de ruido blanco
-    if np.std(gray) < 20:  # Imagen muy uniforme
-        entropy *= 0.5
-
-    return entropy
-
-
-def _check_speckle_texture(img_rgb: np.ndarray) -> bool:
-    """Heurística simplificada: textura "speckle" típica de ecografía.
-
-    En un núcleo simple, contamos transiciones fuertes entre píxeles adyacentes.
-    """
-    gray = np.mean(img_rgb, axis=2).astype(np.float32)
-    # Gradiente simple
-    gx = np.abs(gray[:, 1:] - gray[:, :-1])
-    gy = np.abs(gray[1:, :] - gray[:-1, :])
-    strength = (np.sum(gx) + np.sum(gy)) / (gray.shape[0] * gray.shape[1] * 255.0)
-
-    # Ajuste para imágenes con patrones geométricos (chessboard, bw_photo)
-    # y ruido puro
-    if np.std(gray) > 100:  # Imagen con patrones geométricos o ruido
-        return False
-
-    # El ruido puro tiene una fuerza de gradiente muy alta (usualmente > 0.3)
-    # Las fotos B/N suelen tener áreas suaves con bordes nítidos, cambiando la distribución
-    # Ecografías tienen speckle moderado
-    return 0.05 < strength < 0.25  # Rango más estrecho para ecografía real
-
-
-def validate_image_heuristics(img: Image.Image) -> dict:
-    """Aplica heurísticas rápidas a la imagen PIL.
-
-    Returns un dict con flags que usará el pipeline OOD para decidir.
-    """
-    # Convertimos a numpy RGB
-    img_rgb = np.array(img.convert("RGB"))
-    h, w, _ = img_rgb.shape
-
-    result = {
-        "is_monochrome": _is_monochrome_like(img_rgb),
-        "entropy": _entropy_image(img_rgb),
-        "has_speckle": _check_speckle_texture(img_rgb),
-        "aspect_ratio": w / h if h > 0 else 0,
-        "total_pixels": w * h,
-    }
-
-    # Umbrales orientativos (ajustables vía config en el futuro)
-    # Entropía baja + monocromático = probable foto de baja calidad o captura de pantalla
-    # Razón de aspecto de ecografía típica: suele ser más ancho que alto, pero varía
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Validador OOD multicapa: decide si la imagen es confiable, no concluyente o inválida
-# ---------------------------------------------------------------------------
-
-VALIDAR_MONOCHROME = True
-UMbral_ENTROPIA_BAJA = 3.0  # bits; bajo sugiere captura de pantalla o imagen plana
-UMbral_RATIO_ASPECTO = (0.3, 3.0)  # razón ancho/alto esperada para una ecografía
-
-
-def classify_ood(img: Image.Image) -> str:
-    """Clasifica la imagen en una de tres categorías.
+def predict_image(
+    model: torch.nn.Module, device: torch.device, image: Image.Image
+) -> tuple[int | None, list[float]]:
+    """Predicción cruda (sin OOD) para CLI y compatibilidad.
 
     Returns:
-        "valida"         -> Pasa todas las heurísticas, se puede clasificar.
-        "no_concluyente" -> Falla una o dos heurísticas; se muestra mensaje de duda.
-        "no_es_ecografia" -> Falla criterios críticos; se niega la clasificación.
+        ``(pred_idx, probs)`` con ``probs`` sumando 1. Para la app usa
+        ``analyze_image``, que aplica validación OOD y calibración.
     """
-    flags = validate_image_heuristics(img)
-    reasons = []
-
-    # 1. Chequeo de monocromía + entropía
-    if flags["is_monochrome"] and flags["entropy"] < UMbral_ENTROPIA_BAJA:
-        reasons.append("baja_entropia_y_monocromatica")
-
-    # 2. Razón de aspecto fuera de rango plausible
-    # Ajustamos el umbral para ser más permisivos con imágenes sintéticas
-    # pero manteniendo un mínimo de coherencia
-    ar = flags["aspect_ratio"]
-    if not (0.2 <= ar <= 5.0):
-        reasons.append("razon_aspecto_fuera_rango")
-
-    # 3. Textura speckle fuera del rango de ecografía (muy lisa o demasiado ruidosa/geométrica)
-    if not flags["has_speckle"]:
-        reasons.append("textura_no_valida")
-
-    # 4. Chequeo de color (las fotos suelen tener más color que una ecografía)
-    # Ajustamos para ser más permisivos con imágenes sintéticas
-    if not flags["is_monochrome"] and flags["entropy"] > 2.0:
-        reasons.append("no_es_monocromatica")
-
-    # Decisión
-    if len(reasons) >= 2:
-        return "no_es_ecografia"
-    elif len(reasons) == 1:
-        return "no_concluyente"
-    else:
-        return "valida"
+    _, probs = predict_logits(model, device, image)
+    return int(np.argmax(probs)), probs.tolist()
 
 
-# ---------------------------------------------------------------------------
-# Predicción pública: primero valida OOD, luego predice
-# ---------------------------------------------------------------------------
+def classify_ood(image: Image.Image) -> str:
+    """Valida la imagen solo con heurísticas (sin cargar el modelo).
+
+    Returns:
+        ``valida_confiable``, ``valida_no_concluyente`` o
+        ``no_es_ecografia_mamaria``. Una imagen ilegible se trata como no
+        válida en lugar de lanzar una excepción en la UI.
+    """
+    try:
+        prepared = prepare_image(image)
+    except InvalidImageError:
+        return OOD_NO_ES_ECOGRAFIA
+    features = compute_features(prepared)
+    status, _ = heuristic_verdict(features)
+    return status
+
+
+def _empty_result(
+    status: str,
+    message: str,
+    *,
+    reasons: list[str] | None = None,
+    features: dict[str, Any] | None = None,
+    energy: float | None = None,
+    temperature: float = 1.0,
+    calibration: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "result": None,
+        "confidence": None,
+        "raw_confidence": None,
+        "probabilities_percent": None,
+        "margin": None,
+        "energy": energy,
+        "temperature": temperature,
+        "reasons": reasons or [],
+        "features": features or {},
+        "message": message,
+        "gradcam": None,
+        "calibration": calibration or {},
+    }
+
+
+def analyze_image(
+    model: torch.nn.Module,
+    device: torch.device,
+    image: Image.Image,
+    *,
+    config: dict[str, Any] | None = None,
+    with_gradcam: bool = True,
+) -> dict[str, Any]:
+    """Pipeline completo de análisis de una ecografía.
+
+    Returns un dict con ``status``, ``result`` (o ``None``), ``confidence``,
+    ``probabilities_percent`` (o ``None``), ``message``, ``reasons``, ``energy``,
+    ``features``, ``gradcam`` (PIL) y metadatos de calibración.
+    """
+    cfg = load_ood_config()
+    if config:
+        cfg.update(config)
+    temperature = float(cfg.get("temperature", 1.0) or 1.0)
+
+    # 1. Validación del archivo (tipo real, tamaño, resolución, EXIF).
+    try:
+        prepared = prepare_image(image, config=cfg)
+    except InvalidImageError as exc:
+        return _empty_result(
+            OOD_NO_ES_ECOGRAFIA,
+            str(exc),
+            reasons=["archivo_invalido"],
+            calibration=cfg,
+            temperature=temperature,
+        )
+
+    # 2. Heurísticas B-mode.
+    features = compute_features(prepared)
+    heuristic_status, reasons = heuristic_verdict(features, config=cfg)
+
+    if heuristic_status == OOD_NO_ES_ECOGRAFIA:
+        return _empty_result(
+            OOD_NO_ES_ECOGRAFIA,
+            (
+                "Esta imagen no parece una ecografía mamaria en escala de grises. "
+                "Sube una imagen de ultrasonido de mama; no se ha generado ningún "
+                "diagnóstico ni porcentaje."
+            ),
+            reasons=reasons,
+            features=features.as_dict(),
+            calibration=cfg,
+            temperature=temperature,
+        )
+
+    # 3. Inferencia y energy score.
+    try:
+        logits, raw_probs = predict_logits(model, device, prepared)
+    except RuntimeError as exc:
+        return _empty_result(
+            OOD_VALIDA_NO_CONCLUYENTE,
+            f"No se pudo analizar la imagen: {exc}",
+            reasons=reasons + ["error_inferencia"],
+            features=features.as_dict(),
+            calibration=cfg,
+            temperature=temperature,
+        )
+
+    energy = energy_score(logits, temperature)
+    scaled = logits / max(temperature, 1e-6)
+    scaled = scaled - scaled.max()
+    calibrated = np.exp(scaled) / np.exp(scaled).sum()
+    order = np.argsort(calibrated)[::-1]
+    top_probability = float(calibrated[order[0]])
+    margin = float(calibrated[order[0]] - calibrated[order[1]])
+    predicted_idx = int(order[0])
+    predicted_class = CLASSES[predicted_idx]
+
+    # 4. Decisión combinada.
+    decision = combine_decision(
+        heuristic_status,
+        reasons,
+        features,
+        energy=energy,
+        top_probability=top_probability,
+        margin=margin,
+        config=cfg,
+    )
+
+    if decision.status == OOD_NO_ES_ECOGRAFIA:
+        return _empty_result(
+            OOD_NO_ES_ECOGRAFIA,
+            (
+                "Esta imagen no parece una ecografía mamaria compatible con el "
+                "modelo. No se muestra ninguna clase ni porcentaje. Si tienes una "
+                "ecografía de mama, verifica el archivo y vuelve a intentarlo."
+            ),
+            reasons=decision.reasons,
+            features=decision.features,
+            energy=energy,
+            temperature=temperature,
+            calibration=cfg,
+        )
+
+    if decision.status == OOD_VALIDA_NO_CONCLUYENTE:
+        return _empty_result(
+            OOD_VALIDA_NO_CONCLUYENTE,
+            (
+                "El análisis no es concluyente: el modelo no tiene certeza "
+                "suficiente o dos clases compiten. No se fuerza un resultado. "
+                "Consulta a un especialista y, si es posible, repite la ecografía."
+            ),
+            reasons=decision.reasons,
+            features=decision.features,
+            energy=energy,
+            temperature=temperature,
+            calibration=cfg,
+        )
+
+    # 5. Resultado confiable + Grad-CAM.
+    gradcam = None
+    if with_gradcam:
+        try:
+            tensor = _prepare_tensor(prepared, device)
+            gradcam, _ = explain_prediction(
+                model, tensor, prepared, class_idx=predicted_idx
+            )
+        except Exception:  # noqa: BLE001 — Grad-CAM es explicativo, no bloquea
+            gradcam = None
+
+    return {
+        "status": OOD_VALIDA_CONFIABLE,
+        "result": predicted_class,
+        "confidence": round(top_probability * 100, 2),
+        "raw_confidence": round(float(np.max(raw_probs)) * 100, 2),
+        "probabilities_percent": [round(float(p) * 100, 2) for p in calibrated],
+        "margin": round(margin, 4),
+        "energy": round(float(energy), 4),
+        "temperature": temperature,
+        "reasons": decision.reasons,
+        "features": decision.features,
+        "message": None,
+        "gradcam": gradcam,
+        "calibration": cfg,
+    }
+
 
 def predict_image_with_ood(
     model: torch.nn.Module,
     device: torch.device,
     image: Image.Image,
-    *,  # keywords-only args abajo
-    warn_unreliable: bool = True,
-) -> dict:
-    """Ejecuta la predicición con validación OOD previa.
+    *,
+    with_gradcam: bool = False,
+) -> dict[str, Any]:
+    """Alias compatible de ``analyze_image`` (API anterior)."""
+    return analyze_image(model, device, image, with_gradcam=with_gradcam)
 
-    Returns un dict con:
-        result: "Benigno" | "Maligno" | "Normal" | None
-        confidence: float | None
-        ood_status: "valida" | "no_concluyente" | "no_es_ecografia"
-        message: str | None  # mensaje amable si OOD bloquea el diagnóstico
-    """
-    # Paso 1: Validación OOD
-    ood_status = classify_ood(image)
 
-    # Si OOD bloquea, devolvemos inmediatamente sin clasificar
-    if ood_status == "no_es_ecografia":
-        return {
-            "result": None,
-            "confidence": None,
-            "ood_status": "no_es_ecografia",
-            "message": (
-                "Esta imagen no parece una ecografía mamaria. "
-                "Por favor, sube una imagen de ultrasonido de mama para obtener un resultado."
-            ),
-        }
-
-    # Si OOD es no_concluyente, advertimos pero continuamos con cautela
-    if ood_status == "no_concluyente" and warn_unreliable:
-        # Continuamos, pero el mensaje final lo indicará
-        pass
-
-    # Paso 2: Predicción normal (mismo código de siempre)
-    try:
-        pred_idx, probs = predict_image(model, device, image)
-    except Exception as exc:
-        return {
-            "result": None,
-            "confidence": None,
-            "ood_status": ood_status,
-            "message": f"Error durante la predicción: {exc}",
-        }
-
-    if pred_idx is None:
-        return {
-            "result": None,
-            "confidence": None,
-            "ood_status": ood_status,
-            "message": "No se pudo obtener un resultado. Intenta con otra imagen.",
-        }
-
-    resultado = ["Benigno", "Maligno", "Normal"][pred_idx]
-    confianza = probs[pred_idx] * 100
-
-    # Paso 3: Si la confianza es muy baja después de pasar OOD, es "no concluyente"
-    if confianza < 50.0 and ood_status == "valida":
-        # Reducimos a "no concluyente" en lugar de mostrar un porcentaje alto dudoso
-        return {
-            "result": None,
-            "confidence": None,
-            "ood_status": "no_concluyente",
-            "message": (
-                "El modelo no tiene suficiente certeza sobre esta imagen. "
-                "Se recomienda una nueva ecografía o consulta con un especialista."
-            ),
-        }
-
-    return {
-        "result": resultado,
-        "confidence": round(confianza, 2),
-        "ood_status": ood_status,
-        "message": None,
-    }
+__all__ = [
+    "analyze_image",
+    "classify_ood",
+    "predict_image",
+    "predict_image_with_ood",
+    "predict_logits",
+]

@@ -1,5 +1,13 @@
 # Auditoria de HopeScan (HopeScamDetecte)
 
+> **Estado tras el rediseño (2026-11-03):** este documento describe el código
+> original. Varios hallazgos ya están corregidos: se eliminó `SALUD123`, se
+> añadieron tests/CI/`.gitignore`, se unificó el chatbot, se usa
+> `weights_only=True`, el guardado de CSV es atómico, el nombre visible es
+> HopeScan y la confianza baja ya no se presenta como resultado definitivo.
+> **Sigue pendiente** purgar `patient_records.csv` del historial público; ver
+> `docs/LIMPIEZA_HISTORIAL.md`.
+
 ## Estructura actual (código original, antes del refactor)
 
 ```

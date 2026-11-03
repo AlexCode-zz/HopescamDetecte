@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ################################################################################
-# run.sh — HopeScan / HopeScam
+# run.sh — HopeScan
 #
 # Script todo-en-uno para levantar la aplicación de un solo comando.
 #
@@ -8,7 +8,7 @@
 #   1. Detecta el sistema operativo (Linux/macOS o Git Bash en Windows).
 #   2. Crea el entorno virtual (.venv) si no existe.
 #   3. Activa el entorno virtual.
-#   4. Instala las dependencias de requirements.txt.
+#   4. Instala las dependencias (variante CPU en Linux/Windows; PyPI en macOS).
 #   5. Copia los archivos de configuración de ejemplo (.env y secrets.toml)
 #      si aún no existen (sin sobrescribir los tuyos).
 #   6. Lanza la app con: streamlit run app.py
@@ -99,9 +99,24 @@ ok "Entorno virtual activado."
 # 5. Instalar dependencias
 # -----------------------------------------------------------------------------
 if [ -f "requirements.txt" ]; then
-    info "Instalando dependencias de requirements.txt (puede tardar unos minutos)..."
+    REQ_FILE="requirements.txt"
+    # La variante CPU solo está publicada para Linux/Windows en el índice de PyTorch.
+    # En macOS se instala desde PyPI (los wheels ya son CPU).
+    if [ "$SISTEMA" != "macos" ] && [ -f "requirements-cpu.txt" ]; then
+        REQ_FILE="requirements-cpu.txt"
+    fi
+
+    info "Instalando dependencias de $REQ_FILE (puede tardar unos minutos)..."
     python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
-    python3 -m pip install -r requirements.txt
+    if ! python3 -m pip install -r "$REQ_FILE"; then
+        if [ "$REQ_FILE" = "requirements-cpu.txt" ]; then
+            warn "Falló la instalación CPU; reintentando con requirements.txt (PyPI)."
+            python3 -m pip install -r requirements.txt
+        else
+            error "No se pudieron instalar las dependencias."
+            exit 1
+        fi
+    fi
     ok "Dependencias instaladas."
 else
     warn "No se encontró requirements.txt; se omite la instalación de dependencias."
@@ -113,8 +128,10 @@ fi
 if [ -f ".env.example" ] && [ ! -f ".env" ]; then
     cp .env.example .env
     ok "Archivo .env creado a partir de .env.example."
+    warn "Streamlit no carga .env automáticamente; usa .streamlit/secrets.toml o exporta las variables."
 elif [ -f ".env" ]; then
     ok "Archivo .env ya existe (se conserva)."
+    warn "Recuerda que Streamlit no carga .env automáticamente; usa secrets.toml o exporta las variables."
 else
     warn "No hay .env.example; se omite la creación de .env."
 fi
@@ -122,6 +139,7 @@ fi
 if [ -f ".streamlit/secrets.toml.example" ] && [ ! -f ".streamlit/secrets.toml" ]; then
     cp .streamlit/secrets.toml.example .streamlit/secrets.toml
     ok "Archivo .streamlit/secrets.toml creado a partir del ejemplo."
+    warn "Edita .streamlit/secrets.toml y define SEARCH_PASSWORD para habilitar la búsqueda."
 elif [ -f ".streamlit/secrets.toml" ]; then
     ok "Archivo .streamlit/secrets.toml ya existe (se conserva)."
 else

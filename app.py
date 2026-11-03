@@ -1,8 +1,7 @@
 """HopeScan — entrypoint Streamlit.
 
-Orquesta layout + pestañas. Delega la lógica pura en ``src/hopescan/*``.
-El modelo se carga una sola vez con ``st.cache_resource`` para no recargarlo
-en cada rerun.
+Orquesta el layout y las pestañas. La lógica pura vive en ``src/hopescan/*``.
+El modelo se carga una sola vez con ``st.cache_resource``.
 """
 
 from __future__ import annotations
@@ -13,16 +12,20 @@ from pathlib import Path
 import streamlit as st
 
 # Hacer que src/ sea importable tanto si se ejecuta app.py directamente
-# (streamlit run app.py) como vía shim inferencia_cancer3.py
+# (streamlit run app.py) como vía el shim inferencia_cancer3.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from hopescan.config import resolve_model_path
+from hopescan.config import (
+    APP_DISCLAIMER,
+    APP_NAME,
+    APP_TAGLINE,
+    resolve_model_path,
+)
 from hopescan.model import load_model
 from hopescan.ui.buscar_paciente import view_buscar_paciente
 from hopescan.ui.chat_widget import render_widget
 from hopescan.ui.nuevo_analisis import view_nuevo_analisis
 from hopescan.ui.sidebar_info import render_sidebar
-from hopescan.ui.styles import CHAT_CSS
 
 
 @st.cache_resource(show_spinner="Cargando modelo de IA...")
@@ -48,73 +51,91 @@ def _init_session_state() -> None:
             st.session_state[key] = default
 
 
+def _render_header() -> None:
+    st.title(APP_NAME)
+    st.caption(f"{APP_TAGLINE} · El Salvador")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.badge(
+            "Validación de imagen activa",
+            icon=":material/verified_user:",
+            color="green",
+        )
+    with c2:
+        st.badge(
+            "Resultados orientativos",
+            icon=":material/info:",
+            color="blue",
+        )
+    with c3:
+        st.badge(
+            "Datos sensibles protegidos",
+            icon=":material/lock:",
+            color="violet",
+        )
+
+
 def main() -> None:
     st.set_page_config(
-        page_title="HopeScan — Detección de cáncer de mama",
+        page_title="HopeScan · Apoyo a la detección temprana",
         page_icon=":material/medical_services:",
         layout="wide",
+        initial_sidebar_state="expanded",
     )
-
-    # CSS mínimo (solo chat flotante). El resto del estilo viene del tema
-    # nativo en .streamlit/config.toml y componentes nativos de Streamlit.
-    st.markdown(CHAT_CSS, unsafe_allow_html=True)
 
     _init_session_state()
 
-    # Cargar modelo (cached)
-    model, device_or_err = _load_model_cached()
+    model, device_or_error = _load_model_cached()
+    device_text = str(device_or_error) if model is not None else None
+
+    with st.sidebar:
+        render_sidebar(model_ready=model is not None, device=device_text)
+
+    _render_header()
+    st.divider()
 
     if model is None:
         model_path = resolve_model_path() or "(ruta desconocida)"
         st.error(
             f"No se pudo cargar el modelo desde `{model_path}`. "
-            "Verifica que `modelo_cancer_mobilenet.pth` exista. "
-            "La app no podrá realizar predicciones.",
+            "Verifica que `modelo_cancer_mobilenet.pth` exista. La pestaña de "
+            "análisis quedará deshabilitada.",
             icon=":material/error:",
         )
-        if device_or_err is not None:
-            st.caption(f"Detalle: {device_or_err}")
+        if isinstance(device_or_error, Exception):
+            st.caption(f"Detalle: {device_or_error}")
 
-    # Sidebar (columna izquierda)
-    with st.sidebar:
-        render_sidebar()
-
-    # Contenido principal
-    st.markdown(
-        """
-        <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
-            <span style="font-size:2rem;">:material/medical_services:</span>
-            <h1 style="margin:0;">HopeScan</h1>
-        </div>
-        <p style="color:#6B7280; margin-top:0;">
-            Asistente de apoyo a la detección de cáncer de mama por ultrasonido — El Salvador.
-        </p>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    tab_new, tab_search = st.tabs(
+    tab_new, tab_search, tab_chat = st.tabs(
         [
-            ":material/add_circle: Nuevo análisis",
+            ":material/monitor_heart: Nuevo análisis",
             ":material/search: Buscar paciente",
+            ":material/forum: Asistente educativo",
         ]
     )
 
     with tab_new:
         if model is not None:
-            view_nuevo_analisis(model, device_or_err)
+            view_nuevo_analisis(model, device_or_error)
         else:
             st.warning(
-                "El modelo no está disponible. No se pueden hacer predicciones hasta que se cargue correctamente.",
+                "El modelo no está disponible. No se pueden realizar análisis "
+                "hasta que se cargue correctamente.",
                 icon=":material/error:",
+            )
+            st.info(
+                "Coloca `modelo_cancer_mobilenet.pth` en la raíz del proyecto o "
+                "en `models/`, y reinicia la aplicación.",
+                icon=":material/folder:",
             )
 
     with tab_search:
         view_buscar_paciente()
 
-    # Chat flotante (abarca todo el ancho inferior)
-    st.markdown("---")
-    render_widget()
+    with tab_chat:
+        render_widget()
+
+    st.divider()
+    st.caption(f"{APP_NAME} · {APP_DISCLAIMER}")
 
 
 if __name__ == "__main__":

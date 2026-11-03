@@ -1,0 +1,29 @@
+{
+  "version": "2026-11-03-fixtures-v1",
+  "provenance": "Umbrales provisionales derivados de los fixtures sintéticos de tests/fixtures/ood. NO son calibración clínica ni métricas de un dataset real. Recalibrar con ml/calibrate_ood.py usando un conjunto validado de ecografías mamarias reales.",
+  "calibration_status": "provisional_fixtures",
+  "temperature": 1.0,
+  "energy_threshold": 1.8,
+  "confidence_threshold": 0.6,
+  "margin_threshold": 0.15,
+  "min_side": 128,
+  "max_side": 8192,
+  "max_upload_mb": 15,
+  "colorfulness_max": 12.0,
+  "entropy_min": 3.0,
+  "entropy_max": 7.8,
+  "gradient_min": 5.0,
+  "gradient_max": 90.0,
+  "std_min": 8.0,
+  "std_max": 120.0,
+  "unique_colors_min": 16,
+  "aspect_min": 0.4,
+  "aspect_max": 2.5,
+  "metrics": {
+    "auc_roc": null,
+    "fpr_at_95tpr": null,
+    "ece_before": null,
+    "ece_after": null,
+    "note": "Sin datos reales etiquetados no se reportan métricas. No inventar valores."
+  }
+}

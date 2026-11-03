@@ -1,241 +1,282 @@
-"""Tests para validación OOD (FASE 2).
+"""Tests del pipeline OOD y de la inferencia segura.
 
-Cubre:
-- Heurísticas individuales (monocromático, entropía, razón de aspecto, textura speckle)
-- Casos combinados (valida, no_concluyente, no_es_ecografia)
-- Casos límite (imágenes muy pequeñas, RGBA, escala de grises, PNG con transparencia)
-- Archivos corruptos y extensiones falsas
+Contrato que se verifica:
 
-Los tests deben:
-1. Marcarse como skip si falta un archivo de fixture (para datos reales)
-2. Verificar que las imágenes rechazadas sean no_es_ecografia o no_concluyente
-3. Verificar que las imágenes aceptadas sean valida
-4. Cubrir cada heurística por separado
-5. Probar casos combinados
-6. Probar casos límite
+- Una imagen que no parece una ecografía mamaria devuelve
+  ``no_es_ecografia_mamaria`` y **nunca** una clase, confianza o Grad-CAM.
+- Una imagen válida pero sin certeza devuelve ``valida_no_concluyente`` y
+  tampoco muestra una clase.
+- Solo ``valida_confiable`` devuelve clase, probabilidades y Grad-CAM.
+- El modelo no se ejecuta sobre imágenes que las heurísticas rechazan.
 """
 
 from __future__ import annotations
 
+import math
 import os
+
+import numpy as np
 import pytest
+import torch
 from PIL import Image
 
-from hopescan.inference import classify_ood
+from hopescan.config import (
+    CLASSES,
+    OOD_NO_ES_ECOGRAFIA,
+    OOD_VALIDA_CONFIABLE,
+    OOD_VALIDA_NO_CONCLUYENTE,
+)
+from hopescan.gradcam import explain_prediction
+from hopescan.inference import _TRANSFORM, analyze_image, classify_ood
+from hopescan.model import load_model
+from hopescan.ood import (
+    InvalidImageError,
+    combine_decision,
+    compute_features,
+    energy_score,
+    prepare_image,
+)
 
-# Fixture paths
 REJECT_DIR = "tests/fixtures/ood/reject"
 ACCEPT_DIR = "tests/fixtures/ood/accept"
+REJECT_FILES = [
+    "white.png",
+    "black.png",
+    "gray.png",
+    "noise.png",
+    "chessboard.png",
+    "flat_synthetic.png",
+    "gradient.png",
+    "small_chess.png",
+    "green.png",
+    "red.png",
+    "rgba.png",
+    "bw_photo.png",
+]
+
+
+@pytest.fixture(scope="module")
+def model_device():
+    model, device = load_model()
+    assert model is not None
+    return model, device
+
+
+def _path(directory: str, filename: str) -> str:
+    return os.path.join(directory, filename)
 
 
 # ---------------------------------------------------------------------------
-# Tests para imágenes que DEBEN rechazarse
+# Heurísticas: fixtures que deben rechazarse o aceptarse
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "white.png",
-        "black.png",
-        "gray.png",
-        "noise.png",
-        "chessboard.png",
-        "flat_synthetic.png",
-        "green.png",
-        "red.png",
-        "rgba.png",
-        # "bw_photo.png",  # Comentado temporalmente por dificultad de heurística
-    ],
-)
-def test_reject_images(filename):
-    """Verifica que las imágenes que DEBEN rechazarse sean clasificadas como no_es_ecografia o no_concluyente."""
-    path = os.path.join(REJECT_DIR, filename)
+@pytest.mark.parametrize("filename", REJECT_FILES)
+def test_reject_fixtures_are_not_ultrasound(filename):
+    path = _path(REJECT_DIR, filename)
     if not os.path.exists(path):
         pytest.skip(f"Fixture {filename} no existe")
-
-    img = Image.open(path)
-    status = classify_ood(img)
-    assert status in {"no_es_ecografia", "no_concluyente"}, f"{filename} debería rechazarse"
-
-
-# ---------------------------------------------------------------------------
-# Tests para imágenes que DEBEN aceptarse
-# ---------------------------------------------------------------------------
+    status = classify_ood(Image.open(path))
+    assert status == OOD_NO_ES_ECOGRAFIA, f"{filename} debería rechazarse"
 
 
 @pytest.mark.parametrize(
     "filename",
-    [
-        # "gradient.png", # Movido a una categoría de prueba específica o aceptando su rechazo
-        "small_chess.png",
-        "ultrasynth_0.png",
+    ["ultrasynth_1.png", "ultrasynth_2.png", "ultrasynth_3.png", "ultrasynth_4.png"],
+)
+def test_reliable_ultrasound_fixtures(filename):
+    path = _path(ACCEPT_DIR, filename)
+    if not os.path.exists(path):
+        pytest.skip(f"Fixture {filename} no existe")
+    assert classify_ood(Image.open(path)) == OOD_VALIDA_CONFIABLE
+
+
+def test_ambiguous_ultrasound_fixture_is_no_conclusive(model_device):
+    model, device = model_device
+    path = _path(ACCEPT_DIR, "ultrasynth_0.png")
+    if not os.path.exists(path):
+        pytest.skip("Fixture ultrasynth_0.png no existe")
+    # Las heurísticas lo aceptan como ecografía; la falta de certeza la decide
+    # el pipeline completo con la confianza calibrada.
+    assert classify_ood(Image.open(path)) == OOD_VALIDA_CONFIABLE
+    result = analyze_image(model, device, Image.open(path), with_gradcam=False)
+    assert result["status"] == OOD_VALIDA_NO_CONCLUYENTE
+    assert result["result"] is None
+
+
+def test_very_small_image_is_rejected():
+    assert classify_ood(Image.new("RGB", (10, 10), color=(128, 128, 128))) == (
+        OOD_NO_ES_ECOGRAFIA
+    )
+
+
+def test_rgba_and_grayscale_are_rejected_when_flat():
+    assert classify_ood(Image.new("RGBA", (224, 224), color=(10, 20, 30, 255))) == (
+        OOD_NO_ES_ECOGRAFIA
+    )
+    assert classify_ood(Image.new("L", (224, 224), color=128)) == OOD_NO_ES_ECOGRAFIA
+
+
+def test_corrupt_bytes_are_rejected_without_exception():
+    assert classify_ood(b"esto no es una imagen") == OOD_NO_ES_ECOGRAFIA
+
+
+# ---------------------------------------------------------------------------
+# Validación de archivo
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_image_rejects_empty_bytes():
+    with pytest.raises(InvalidImageError):
+        prepare_image(b"")
+
+
+def test_prepare_image_rejects_oversized_file():
+    tiny = Image.new("RGB", (224, 224), color=(128, 128, 128))
+    import io
+
+    buffer = io.BytesIO()
+    tiny.save(buffer, format="PNG")
+    with pytest.raises(InvalidImageError):
+        prepare_image(buffer.getvalue(), config={"max_upload_mb": 0})
+
+
+def test_prepare_image_converts_rgba_to_rgb():
+    prepared = prepare_image(Image.new("RGBA", (224, 224), color=(1, 2, 3, 255)))
+    assert prepared.mode == "RGB"
+
+
+def test_prepare_image_rejects_unsupported_format():
+    svg = (
+        b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
+    )
+    with pytest.raises(InvalidImageError):
+        prepare_image(svg)
+
+
+# ---------------------------------------------------------------------------
+# Contrato de analyze_image
+# ---------------------------------------------------------------------------
+
+
+class _ExplodingModel(torch.nn.Module):
+    def forward(self, _x):  # pragma: no cover - solo debe fallar si se llama
+        raise AssertionError("El modelo no debe ejecutarse sobre una imagen inválida")
+
+
+@pytest.mark.parametrize("filename", ["black.png", "gray.png", "white.png"])
+def test_invalid_image_never_reaches_model(filename):
+    path = _path(REJECT_DIR, filename)
+    if not os.path.exists(path):
+        pytest.skip(f"Fixture {filename} no existe")
+    result = analyze_image(
+        _ExplodingModel(), torch.device("cpu"), Image.open(path), with_gradcam=True
+    )
+    assert result["status"] == OOD_NO_ES_ECOGRAFIA
+    assert result["result"] is None
+    assert result["confidence"] is None
+    assert result["probabilities_percent"] is None
+    assert result["gradcam"] is None
+
+
+def test_no_conclusive_result_hides_class(model_device):
+    model, device = model_device
+    image = Image.open(_path(ACCEPT_DIR, "ultrasynth_0.png"))
+    result = analyze_image(model, device, image, with_gradcam=True)
+    assert result["status"] == OOD_VALIDA_NO_CONCLUYENTE
+    assert result["result"] is None
+    assert result["confidence"] is None
+    assert result["probabilities_percent"] is None
+    assert result["gradcam"] is None
+
+
+def test_reliable_result_has_class_probabilities_and_gradcam(model_device):
+    model, device = model_device
+    image = Image.open(_path(ACCEPT_DIR, "ultrasynth_1.png"))
+    result = analyze_image(model, device, image, with_gradcam=True)
+    assert result["status"] == OOD_VALIDA_CONFIABLE
+    assert result["result"] in CLASSES
+    assert result["confidence"] is not None and 0 < result["confidence"] <= 100
+    assert result["probabilities_percent"] is not None
+    assert len(result["probabilities_percent"]) == 3
+    assert abs(sum(result["probabilities_percent"]) - 100.0) < 0.1
+    assert result["gradcam"] is not None
+
+
+def test_all_reliable_fixtures_follow_status_contract(model_device):
+    model, device = model_device
+    statuses = set()
+    for filename in [
         "ultrasynth_1.png",
         "ultrasynth_2.png",
         "ultrasynth_3.png",
         "ultrasynth_4.png",
-    ],
-)
-def test_accept_images(filename):
-    """Verifica que las imágenes que DEBEN aceptarse sean clasificadas como valida o no_concluyente."""
-    path = os.path.join(ACCEPT_DIR, filename)
-    if not os.path.exists(path):
-        pytest.skip(f"Fixture {filename} no existe")
-
-    img = Image.open(path)
-    status = classify_ood(img)
-    assert status in {"valida", "no_concluyente"}, f"{filename} debería aceptarse o ser no_concluyente"
-
-
-# ---------------------------------------------------------------------------
-# Tests para casos límite
-# ---------------------------------------------------------------------------
-
-
-def test_very_small_image():
-    """Verifica que imágenes muy pequeñas sean rechazadas."""
-    img = Image.new("RGB", (10, 10), color=(128, 128, 128))
-    status = classify_ood(img)
-    assert status in {"no_es_ecografia", "no_concluyente"}, "Imágenes muy pequeñas deberían rechazarse"
-
-
-def test_rgba_image():
-    """Verifica que imágenes RGBA sean manejadas correctamente."""
-    img = Image.new("RGBA", (224, 224), color=(10, 20, 30, 255))
-    status = classify_ood(img)
-    assert status in {"no_es_ecografia", "no_concluyente"}, "Imágenes RGBA deberían rechazarse"
-
-
-def test_grayscale_image():
-    """Verifica que imágenes en escala de grises sean manejadas correctamente."""
-    img = Image.new("L", (224, 224), color=128)
-    status = classify_ood(img)
-    assert status in {"no_es_ecografia", "no_concluyente"}, "Imágenes en escala de grises deberían rechazarse"
-
-
-def test_corrupt_file(tmp_path):
-    """Verifica que archivos corruptos sean manejados correctamente."""
-    corrupt_path = tmp_path / "corrupt.png"
-    corrupt_path.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\xf3\xffa\x00\x00\x00\x0aIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x02\x00\x00\x00\x00IEND\xaeB`\x82")
-    with pytest.raises(Exception):
-        img = Image.open(corrupt_path)
-        classify_ood(img)
-
-
-def test_false_extension(tmp_path):
-    """Verifica que archivos con extensiones falsas sean manejados correctamente."""
-    false_path = tmp_path / "fake.jpg"
-    false_path.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\xf3\xffa\x00\x00\x00\x0aIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x02\x00\x00\x00\x00IEND\xaeB`\x82")
-    with pytest.raises(Exception):
-        img = Image.open(false_path)
-        classify_ood(img)
+    ]:
+        result = analyze_image(
+            model, device, Image.open(_path(ACCEPT_DIR, filename)), with_gradcam=False
+        )
+        statuses.add(result["status"])
+        if result["status"] == OOD_VALIDA_CONFIABLE:
+            assert result["result"] in CLASSES
+            assert result["probabilities_percent"] is not None
+        else:
+            assert result["result"] is None
+            assert result["probabilities_percent"] is None
+    assert OOD_VALIDA_CONFIABLE in statuses
 
 
 # ---------------------------------------------------------------------------
-# Tests para heurísticas individuales
+# Energy score y decisión combinada
 # ---------------------------------------------------------------------------
 
 
-def test_monochrome_heuristic():
-    """Verifica que la heurística monocromática funcione correctamente."""
-    # Imagen monocromática que debería rechazarse
-    mono = Image.new("RGB", (224, 224), color=(128, 128, 128))
-    assert classify_ood(mono) in {"no_es_ecografia", "no_concluyente"}
-
-    # Imagen con variación de color que debería aceptarse si tuviera textura,
-    # pero como es color sólido, se espera no_concluyente.
-    color = Image.new("RGB", (224, 224), color=(100, 150, 200))
-    assert classify_ood(color) == "no_concluyente"
+def test_energy_score_matches_logsumexp():
+    assert math.isclose(energy_score([0.0, 0.0, 0.0]), math.log(3), rel_tol=1e-9)
+    assert energy_score([10.0, 0.0, 0.0]) > energy_score([1.0, 0.0, 0.0])
 
 
-def test_entropy_heuristic():
-    """Verifica que la heurística de entropía funcione correctamente."""
-    # Imagen con baja entropía (debería rechazarse)
-    low_entropy = Image.new("RGB", (224, 224), color=(128, 128, 128))
-    assert classify_ood(low_entropy) in {"no_es_ecografia", "no_concluyente"}
-
-    # Imagen con alta entropía pero sin textura, debería ser no_concluyente
-    high_entropy = Image.new("RGB", (224, 224), color=(100, 150, 200))
-    assert classify_ood(high_entropy) == "no_concluyente"
+def test_energy_score_temperature_scales_result():
+    logits = np.array([2.0, 1.0, 0.0])
+    assert energy_score(logits, temperature=2.0) > energy_score(logits, temperature=1.0)
 
 
-def test_aspect_ratio_heuristic():
-    """Verifica que la heurística de razón de aspecto funcione correctamente."""
-    # Imagen con razón de aspecto fuera de rango (debería rechazarse)
-    wide = Image.new("RGB", (448, 224), color=(100, 150, 200))
-    assert classify_ood(wide) in {"no_es_ecografia", "no_concluyente"}
+def test_combine_decision_rejects_high_energy():
+    features = compute_features(Image.open(_path(ACCEPT_DIR, "ultrasynth_1.png")))
+    decision = combine_decision(
+        OOD_VALIDA_CONFIABLE,
+        [],
+        features,
+        energy=99.0,
+        top_probability=0.99,
+        margin=0.98,
+    )
+    assert decision.status == OOD_NO_ES_ECOGRAFIA
+    assert "energy_score_fuera_de_rango" in decision.reasons
 
-    # Imagen con razón de aspecto dentro de rango (pero sin textura, por lo que es no_concluyente)
-    square = Image.new("RGB", (224, 224), color=(100, 150, 200))
-    assert classify_ood(square) == "no_concluyente"
 
-
-def test_speckle_texture_heuristic():
-    """Verifica que la heurística de textura speckle funcione correctamente."""
-    # Imagen con textura speckle (debería aceptarse si tiene la textura adecuada)
-    import numpy as np
-    np.random.seed(42)
-    speckle = np.random.randint(0, 256, (224, 224, 3), dtype=np.uint8)
-    # Aplicar un filtro para simular mejor el speckle de ecografía
-    speckle = np.clip(speckle, 100, 200)  # Reducir contraste
-    speckle_img = Image.fromarray(speckle)
-    assert classify_ood(speckle_img) in {"valida", "no_concluyente"}
-
-    # Imagen sin textura speckle (debería rechazarse)
-    flat = Image.new("RGB", (224, 224), color=(100, 100, 100))
-    assert classify_ood(flat) in {"no_es_ecografia", "no_concluyente"}
+def test_combine_decision_low_confidence_is_no_conclusive():
+    features = compute_features(Image.open(_path(ACCEPT_DIR, "ultrasynth_1.png")))
+    decision = combine_decision(
+        OOD_VALIDA_CONFIABLE,
+        [],
+        features,
+        energy=0.5,
+        top_probability=0.30,
+        margin=0.10,
+    )
+    assert decision.status == OOD_VALIDA_NO_CONCLUYENTE
+    assert "confianza_calibrada_baja" in decision.reasons
 
 
 # ---------------------------------------------------------------------------
-# Tests para casos combinados
+# Grad-CAM
 # ---------------------------------------------------------------------------
 
 
-def test_combined_cases():
-    """Verifica casos combinados de heurísticas."""
-    # Caso 1: Monocromático + baja entropía (debería rechazarse)
-    mono_low = Image.new("RGB", (224, 224), color=(128, 128, 128))
-    assert classify_ood(mono_low) in {"no_es_ecografia", "no_concluyente"}
-
-    # Caso 2: Monocromático + alta entropía (debería rechazarse si no tiene textura)
-    mono_high = Image.new("RGB", (224, 224), color=(128, 128, 128))
-    # Añadir algo de ruido para alta entropía
-    import numpy as np
-    mono_high_arr = np.array(mono_high)
-    mono_high_arr += np.random.randint(0, 50, (224, 224, 3), dtype=np.uint8)
-    mono_high = Image.fromarray(mono_high_arr)
-    assert classify_ood(mono_high) in {"no_concluyente"}
-
-    # Caso 3: Color + baja entropía (debería ser no_concluyente por falta de textura)
-    color_low = Image.new("RGB", (224, 224), color=(100, 150, 200))
-    assert classify_ood(color_low) == "no_concluyente"
-
-    # Caso 4: Color + alta entropía (puede ser no_concluyente si falta textura específica)
-    color_high = Image.new("RGB", (224, 224), color=(100, 150, 200))
-    color_high_arr = np.array(color_high)
-    color_high_arr += np.random.randint(0, 50, (224, 224, 3), dtype=np.uint8)
-    color_high = Image.fromarray(color_high_arr)
-    assert classify_ood(color_high) in {"valida", "no_concluyente"}
-
-
-# ---------------------------------------------------------------------------
-# Tests para datos reales (marcados como skip si no existen)
-# ---------------------------------------------------------------------------
-
-
-def test_real_ultrasound_images():
-    """Verifica imágenes de ultrasonido reales (deberían aceptarse)."""
-    real_dir = "data/raw/ultrasound"
-    if not os.path.exists(real_dir):
-        pytest.skip("No hay datos reales de ultrasonido disponibles")
-
-    for filename in os.listdir(real_dir):
-        if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-            path = os.path.join(real_dir, filename)
-            img = Image.open(path)
-            status = classify_ood(img)
-            assert status == "valida", f"{filename} debería aceptarse como ultrasonido real"
-
-
-if __name__ == "__main__":
-    pytest.main(["-v", "test_ood.py"])
+def test_gradcam_overlay_matches_image_size(model_device):
+    model, device = model_device
+    image = Image.open(_path(ACCEPT_DIR, "ultrasynth_1.png")).convert("RGB")
+    tensor = _TRANSFORM(image).unsqueeze(0).to(device)
+    overlay, class_idx = explain_prediction(model, tensor, image)
+    assert overlay.size == image.size
+    assert 0 <= class_idx < len(CLASSES)
