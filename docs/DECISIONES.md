@@ -140,3 +140,13 @@ modo claro y oscuro, radios y tipografía) y componentes nativos de Streamlit
 `st.write_stream`). Se eliminó el CSS del chat flotante y no se inyecta
 JavaScript. Se evita `use_container_width` (deprecado) en favor de
 `width="stretch"`/`width="content"`.
+
+## D-014: Purga del historial de Git
+
+**Decisión:** reescribir el historial público con `git filter-repo --invert-paths` eliminando
+`patient_records.csv`, `data/patient_records.csv`, `.claude/`, `.agents/`, `.env` y
+`.streamlit/secrets.toml`, y hacer `git push --force --all --tags` a origin.
+
+**Motivo:** `patient_records.csv` (datos reales de pacientes, incluidos menores, nombres, edades y DUI) estaba en el commit inicial `5cd0be5` del repositorio público. Eliminarlo del árbol no lo borra del historial; cualquier persona con el SHA podía recuperarlo.
+
+**Estado (2026-11-03):** ejecutado y pusheado a `main` y `refactor/estructura-y-estabilidad`. No hay forks, releases ni tags. Los SHA cambiaron (p.. `82b0b04` → `cb62841` en main). El archivo antiguo puede seguir siendo servido temporalmente por URL directa/SHA viejo mientras GitHub haga garbage collection de objetos inalcanzables; se considera el dato expuesto y se recomienda rotar/notificar según la normativa aplicable. Pendiente opcional: solicitar a GitHub Support el GC de objetos inalcanzables.

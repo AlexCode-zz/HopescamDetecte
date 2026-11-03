@@ -181,9 +181,7 @@ guardrails, la autenticación y un flujo completo con `streamlit.testing.AppTest
 - El DUI se muestra enmascarado en la búsqueda.
 - Si configuras Claude, solo la pregunta y los fragmentos de texto se envían a
   Anthropic. No se envían imágenes.
-- El repositorio público tuvo un `patient_records.csv` real en el historial. Sigue
-  las instrucciones de [`docs/LIMPIEZA_HISTORIAL.md`](docs/LIMPIEZA_HISTORIAL.md)
-  para purgarlo; la reescritura de historial requiere confirmación explícita.
+- El repositorio público tuvo un `patient_records.csv` real en el historial inicial. Ya fue purgado del historial reescrito con `git filter-repo` (2026-11-03, `docs/LIMPIEZA_HISTORIAL.md`); el SHA antiguo puede seguir sirviendo el archivo temporalmente hasta que GitHub ejecute garbage collection. Trátalo como expuesto.
 
 ## Limitaciones del modelo y del OOD
 

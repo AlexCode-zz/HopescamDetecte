@@ -1,9 +1,8 @@
 # Limpieza del historial de Git — HopeScan
 
-> **Estado:** documento de preparación. **No se ha reescrito el historial ni se ha hecho `push --force`.**
-> El repositorio `AlexCode-zz/HopescamDetecte` es público y el archivo `patient_records.csv`
-> (con nombres, edades, DUI y datos de menores) **sigue existiendo en el commit inicial `5cd0be5`**.
-> Quitarlo del árbol actual no lo borra del historial: cualquiera puede recuperarlo.
+> **Estado:** completado el 2026-11-03. Historial reescrito con `git filter-repo` y force-push
+> a `main` y `refactor/estructura-y-estabilidad`. Los objetos antiguos pueden seguir accesibles
+> temporalmente por SHA viejo mientras GitHub haga garbage collection.
 
 ## Qué hay que purgar
 

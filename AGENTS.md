@@ -68,14 +68,13 @@ Lint / format (CI runs both):
 
 ## Data privacy and Git
 
-- The real `patient_records.csv` was uploaded in commit `5cd0be5` of the public history. It is absent from the current tree but still recoverable from history.
-- Cleanup instructions: `docs/LIMPIEZA_HISTORIAL.md`. **Do not rewrite history or force-push without explicit user confirmation.**
+- The real `patient_records.csv` was uploaded in commit `5cd0be5` of the public history. It was purged from the rewritten history (2026-11-03, `git filter-repo` + force-push to main and refactor/estructura-y-estabilidad). The old SHA may still serve the file temporarily until GitHub runs garbage collection; treat the data as exposed.
+- Cleanup instructions: `docs/LIMPIEZA_HISTORIAL.md`.
 - Do not commit `.env`, `.streamlit/secrets.toml`, `.venv/`, `data/patient_records.csv`, `__pycache__/`, `.pytest_cache/`.
 
 ## Branches
 
-- Current working branch: `main`, tracking `origin/main` (cleanup changes uncommitted).
-- CI also targets `refactor/estructura-y-estabilidad`. PRs to `main` run CI.
+- Current working branch: `main`, tracking `origin/main` (clean). CI also targets `refactor/estructura-y-estabilidad`. PRs to `main` run CI.
 
 ## What to avoid
 
