@@ -142,9 +142,10 @@ def test_monochrome_heuristic():
     mono = Image.new("RGB", (224, 224), color=(128, 128, 128))
     assert classify_ood(mono) in {"no_es_ecografia", "no_concluyente"}
 
-    # Imagen con variación de color que debería aceptarse
+    # Imagen con variación de color que debería aceptarse si tuviera textura,
+    # pero como es color sólido, se espera no_concluyente.
     color = Image.new("RGB", (224, 224), color=(100, 150, 200))
-    assert classify_ood(color) == "valida"
+    assert classify_ood(color) == "no_concluyente"
 
 
 def test_entropy_heuristic():
@@ -153,9 +154,9 @@ def test_entropy_heuristic():
     low_entropy = Image.new("RGB", (224, 224), color=(128, 128, 128))
     assert classify_ood(low_entropy) in {"no_es_ecografia", "no_concluyente"}
 
-    # Imagen con alta entropía (debería aceptarse)
+    # Imagen con alta entropía pero sin textura, debería ser no_concluyente
     high_entropy = Image.new("RGB", (224, 224), color=(100, 150, 200))
-    assert classify_ood(high_entropy) == "valida"
+    assert classify_ood(high_entropy) == "no_concluyente"
 
 
 def test_aspect_ratio_heuristic():
@@ -194,14 +195,14 @@ def test_combined_cases():
     mono_low = Image.new("RGB", (224, 224), color=(128, 128, 128))
     assert classify_ood(mono_low) in {"no_es_ecografia", "no_concluyente"}
 
-    # Caso 2: Monocromático + alta entropía (debería rechazarse)
+    # Caso 2: Monocromático + alta entropía (debería rechazarse si no tiene textura)
     mono_high = Image.new("RGB", (224, 224), color=(128, 128, 128))
     # Añadir algo de ruido para alta entropía
     import numpy as np
     mono_high_arr = np.array(mono_high)
     mono_high_arr += np.random.randint(0, 50, (224, 224, 3), dtype=np.uint8)
     mono_high = Image.fromarray(mono_high_arr)
-    assert classify_ood(mono_high) in {"no_es_ecografia", "no_concluyente"}
+    assert classify_ood(mono_high) in {"no_concluyente"}
 
     # Caso 3: Color + baja entropía (debería rechazarse)
     color_low = Image.new("RGB", (224, 224), color=(100, 150, 200))

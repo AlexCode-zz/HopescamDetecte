@@ -232,8 +232,8 @@ def test_validation_allows_adult_with_dui():
     "texto, clave",
     [
         ("hola", "hola"),
-        ("qué es ecoscan", "eco"),
-        ("que es ecoscan", "eco"),
+        ("qué es hopescan", "hopescan"),
+        ("que es hopescan", "hopescan"),
         ("tengo miedo", "miedo"),
         ("síntomas", "sintomas"),
         ("que hago ahora", "hago ahora"),
