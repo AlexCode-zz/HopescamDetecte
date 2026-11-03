@@ -1,0 +1,34 @@
+# Entorno y secretos
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Datos reales y artefactos
+data/patient_records.csv
+data/raw/
+data/processed/
+data/rag_index/
+data/*.db
+*.sqlite3
+.coverage
+htmlcov/
+
+# Cachés
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.git/
+.github/
+node_modules/
+frontend/dist/
+
+# Herramientas locales
+.claude/
+.agents/
+.vscode/
+.idea/

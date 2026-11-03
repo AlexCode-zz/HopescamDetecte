@@ -1,8 +1,10 @@
 # --- Python / entorno ---
 .venv/
 venv/
-.env
 .venv*/
+.env
+.env.*
+!.env.example
 __pycache__/
 *.py[cod]
 *$py.class
@@ -22,17 +24,46 @@ wheels/
 .installed.cfg
 *.egg
 
-# --- Pruebas ---
+# --- Pruebas / calidad ---
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
+.ruff_cache/
+.mypy_cache/
+playwright-report/
+test-results/
 
 # --- Streamlit ---
 .streamlit/secrets.toml
 
 # --- Datos sensibles (reales) — NUNCA commitear ---
 data/patient_records.csv
+data/raw/
+data/processed/
+data/rag_index/
+data/hopescan.db
+data/*.db
+data/*.sqlite*
+*.sqlite3
+
+# --- Modelos / entrenamiento ---
+runs/
+mlruns/
+lightning_logs/
+ml/checkpoints/
+ml/outputs/
+*.onnx
+*.pt
+*.pth
+!modelo_cancer_mobilenet.pth
+!models/*.pth
+!ml/checkpoints/.gitkeep
+
+# --- Agentes / herramientas (symlinks locales, no versionar) ---
+.claude/
+.agents/
 
 # --- Sistema ---
 .DS_Store
@@ -44,3 +75,8 @@ local.settings.json
 .idea/
 *.swp
 *.swo
+
+# --- Node (frontend futuro) ---
+node_modules/
+frontend/dist/
+frontend/.vite/
