@@ -1,3 +1,4 @@
+import React from "react";
 import { CheckCircle, Clock, Upload } from "lucide-react";
 
 const STEPS = [
