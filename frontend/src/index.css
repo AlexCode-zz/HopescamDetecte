@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-paper text-ink;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Una sola animación de entrada al cargar la página (principio del skill). */
+  [data-entrance] {
+    animation: fadeUp 0.7s ease-out both;
+  }
+
+  /* Focus visible para accesibilidad por teclado. */
+  :focus-visible {
+    outline: 2px solid #7C3AED;
+    outline-offset: 2px;
+  }
+
+  /* Reducir movimiento si el usuario lo solicita. */
+  @media (prefers-reduced-motion: reduce) {
+    [data-entrance] {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply max-w-5xl mx-auto px-6 py-8 md:px-10 lg:px-12;
+  }
+
+  .section-title {
+    @apply font-serif text-h1 text-ink mb-2;
+  }
+
+  .section-subtitle {
+    @apply text-muted text-small mb-8 max-w-2xl;
+  }
+
+  .panel {
+    @apply bg-surface border border-border rounded-lg p-6 md:p-8 shadow-soft;
+  }
+
+  .panel-sm {
+    @apply bg-surface border border-border rounded-md p-4 md:p-6 shadow-soft;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium uppercase tracking-wider;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary text-white;
+  }
+
+  .badge-success {
+    @apply badge bg-success/10 text-success border border-success/20;
+  }
+
+  .badge-danger {
+    @apply badge bg-danger/10 text-danger border border-danger/20;
+  }
+
+  .badge-attention {
+    @apply badge bg-attention/10 text-attention border border-attention/20;
+  }
+
+  .badge-neutral {
+    @apply badge bg-muted/10 text-muted border border-muted/20;
+  }
+
+  .input-field {
+    @apply block w-full rounded-md border border-border bg-surface text-ink px-4 py-2.5 text-body transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none;
+  }
+
+  .input-field:disabled {
+    @apply bg-muted/10 text-muted border-muted/50 cursor-not-allowed;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-ink mb-1.5;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-5 py-3 text-body font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary-hover;
+  }
+
+  .btn-outline {
+    @apply btn border border-border bg-surface text-ink hover:bg-muted/20;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger text-white hover:#a61c1c;
+  }
+
+  .btn-attention {
+    @apply btn bg-attention text-white hover:#b45309;
+  }
+
+  .btn-success {
+    @apply btn bg-success text-white hover:#036b47;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-muted hover:bg-muted/20 hover:text-ink;
+  }
+
+  .divider {
+    @apply border-t border-border my-6;
+  }
+
+  .grid-2 {
+    @apply grid grid-cols-1 lg:grid-cols-2 gap-8;
+  }
+
+  .image-frame {
+    @apply relative block rounded-lg overflow-hidden border border-border bg-muted/10;
+  }
+
+  .image-frame img {
+    @apply block w-full h-auto max-h-[480px] object-contain;
+  }
+
+  .result-chip {
+    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold border;
+  }
+
+  .result-chip-success {
+    @apply result-chip border-success/30 bg-success/5 text-success;
+  }
+
+  .result-chip-danger {
+    @apply result-chip border-danger/30 bg-danger/5 text-danger;
+  }
+
+  .result-chip-attention {
+    @apply result-chip border-attention/30 bg-attention/5 text-attention;
+  }
+
+  .result-chip-neutral {
+    @apply result-chip border-muted/30 bg-muted/5 text-muted;
+  }
+
+  .metric {
+    @apply bg-surface border border-border rounded-md p-4;
+  }
+
+  .metric-value {
+    @apply text-2xl font-semibold text-ink;
+  }
+
+  .metric-label {
+    @apply text-xs font-medium text-muted uppercase tracking-wider;
+  }
+}
