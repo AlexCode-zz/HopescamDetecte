@@ -96,7 +96,7 @@ source "$ACTIVATE_SCRIPT"
 ok "Entorno virtual activado."
 
 # -----------------------------------------------------------------------------
-# 5. Instalar dependencias
+# 5. Instalar dependencias Python (incluye el API FastAPI para el frontend React)
 # -----------------------------------------------------------------------------
 if [ -f "requirements.txt" ]; then
     REQ_FILE="requirements.txt"
@@ -106,20 +106,42 @@ if [ -f "requirements.txt" ]; then
         REQ_FILE="requirements-cpu.txt"
     fi
 
-    info "Instalando dependencias de $REQ_FILE (puede tardar unos minutos)..."
+    info "Instalando dependencias de Python de $REQ_FILE (puede tardar unos minutos)..."
     python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
     if ! python3 -m pip install -r "$REQ_FILE"; then
         if [ "$REQ_FILE" = "requirements-cpu.txt" ]; then
             warn "Falló la instalación CPU; reintentando con requirements.txt (PyPI)."
             python3 -m pip install -r requirements.txt
         else
-            error "No se pudieron instalar las dependencias."
+            error "No se pudieron instalar las dependencias de Python."
             exit 1
         fi
     fi
-    ok "Dependencias instaladas."
+    ok "Dependencias de Python instaladas."
 else
-    warn "No se encontró requirements.txt; se omite la instalación de dependencias."
+    warn "No se encontró requirements.txt; se omite la instalación de dependencias de Python."
+fi
+
+# Dependencias del API (FastAPI, uvicorn, python-multipart) para el frontend React
+if [ -f "requirements-api.txt" ]; then
+    info "Instalando dependencias del API FastAPI (requirements-api.txt)..."
+    python3 -m pip install -r requirements-api.txt >/dev/null 2>&1 || true
+    ok "Dependencias del API instaladas."
+fi
+
+# -----------------------------------------------------------------------------
+# 6. Instalar y construir el frontend React (Vite + Tailwind)
+# -----------------------------------------------------------------------------
+if [ -f "frontend/package.json" ] && command -v npm >/dev/null 2>&1; then
+    info "Instalando dependencias de Node (frontend/)..."
+    ( cd frontend && npm install --no-audit --no-fund >/dev/null 2>&1 )
+    ok "Dependencias de Node instaladas."
+
+    info "Construyendo el frontend React (vite build)..."
+    ( cd frontend && npm run build >/dev/null 2>&1 )
+    ok "Frontend construido en frontend/dist/."
+else
+    warn "No se encontró frontend/package.json o npm no está disponible; se omite el frontend."
 fi
 
 # -----------------------------------------------------------------------------
@@ -153,11 +175,28 @@ if [ ! -d "data" ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 7. Lanzar la aplicación Streamlit
+# 7. Lanzar la aplicación (API FastAPI + frontend React)
 # -----------------------------------------------------------------------------
 ok "Todo listo. Iniciando HopeScan..."
-info "La app estará disponible en: http://localhost:8501"
+info "La app estará disponible en: http://localhost:5173 (frontend React)"
+info "El API FastAPI correrá en: http://localhost:8000"
 warn "Presiona Ctrl+C para detener la aplicación."
 echo "------------------------------------------------------------"
 
-streamlit run app.py
+# Iniciar el API FastAPI en segundo plano
+.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000 > /tmp/opencode/hopescan-api.log 2>&1 &
+API_PID=$!
+
+# Iniciar el servidor de desarrollo de Vite (frontend React)
+( cd frontend && npx vite --host --port 5173 > /tmp/opencode/hopescan-frontend.log 2>&1 ) &
+FRONTEND_PID=$!
+
+# Limpiar procesos al salir
+cleanup() {
+    kill "$API_PID" "$FRONTEND_PID" 2>/dev/null || true
+    wait 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# Esperar a que terminen los procesos
+wait
