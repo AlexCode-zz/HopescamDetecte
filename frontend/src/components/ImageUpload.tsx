@@ -28,6 +28,7 @@ export default function ImageUpload({
     if (!selected) return;
     setFile(selected);
     setPreview(URL.createObjectURL(selected));
+    onImageReady(selected, URL.createObjectURL(selected));
   };
 
   const handleLoadDemo = () => {
