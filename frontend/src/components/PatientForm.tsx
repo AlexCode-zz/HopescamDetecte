@@ -1,4 +1,4 @@
-import { Microscope, User, Calendar, ShieldCheck, Info } from "lucide-react";
+import { ArrowRight, Microscope, User, Calendar, ShieldCheck, Info } from "lucide-react";
 import { useState } from "react";
 import { DISCLAIMER } from "@/lib/constants";
 
