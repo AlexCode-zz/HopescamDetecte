@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { PlayCircle, Microscope, RefreshCw, UserPlus, Download } from "lucide-react";
 import { api } from "@/lib/api";
 import { DISCLAIMER } from "@/lib/constants";
-import type { PatientFormData, AnalysisResult } from "@/types";
+import type { PatientFormData, AnalysisResult as AnalysisResultType } from "@/types";
 import Progress from "@/components/Progress";
 import PatientForm from "@/components/PatientForm";
 import ImageUpload from "@/components/ImageUpload";
@@ -21,7 +21,7 @@ export default function Analysis() {
   const [demoMode, setDemoMode] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [result, setResult] = useState<AnalysisResultType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [demoImageB64, setDemoImageB64] = useState<string | null>(null);
@@ -233,7 +233,7 @@ export default function Analysis() {
   );
 }
 
-function buildReportHTML(result: AnalysisResult, imagePreview: string): string {
+function buildReportHTML(result: AnalysisResultType, imagePreview: string): string {
   const now = new Date().toLocaleString("es-ES");
   const status = result.status;
   const showClass = result.can_show_class && result.result;

@@ -47,11 +47,11 @@ export default function AnalysisResult({
             }`}
           >
             {variant === "success" ? (
-              <Help size={20} strokeWidth={2} />
+              <HelpCircle size={20} strokeWidth={2} />
             ) : variant === "danger" ? (
-              <Help size={20} strokeWidth={2} />
+              <HelpCircle size={20} strokeWidth={2} />
             ) : (
-              <Help size={20} strokeWidth={2} />
+              <HelpCircle size={20} strokeWidth={2} />
             )}
           </div>
           <div>
