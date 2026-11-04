@@ -122,11 +122,31 @@ else
     warn "No se encontró requirements.txt; se omite la instalación de dependencias de Python."
 fi
 
-# Dependencias del API (FastAPI, uvicorn, python-multipart) para el frontend React
+# Dependencias del API (FastAPI, uvicorn, python-multipart) para el frontend React.
+# Se instalan en un entorno virtual separado (.venv-api/) porque FastAPI y
+# Streamlit requieren versiones incompatibles de starlette y no pueden
+# coexistir en el mismo entorno.
 if [ -f "requirements-api.txt" ]; then
-    info "Instalando dependencias del API FastAPI (requirements-api.txt)..."
-    python3 -m pip install -r requirements-api.txt >/dev/null 2>&1 || true
-    ok "Dependencias del API instaladas."
+    API_VENV=".venv-api"
+    if [ ! -d "$API_VENV" ]; then
+        info "Creando entorno virtual separado para el API ($API_VENV/)..."
+        python3 -m venv "$API_VENV"
+        ok "Entorno del API creado."
+    fi
+    if [ "$SISTEMA" = "windows" ]; then
+        API_PIP="$API_VENV/Scripts/pip"
+        API_UVICORN="$API_VENV/Scripts/uvicorn"
+    else
+        API_PIP="$API_VENV/bin/pip"
+        API_UVICORN="$API_VENV/bin/uvicorn"
+    fi
+    info "Instalando dependencias del API FastAPI (requirements-api.txt) en $API_VENV/..."
+    "$API_PIP" install --upgrade pip >/dev/null 2>&1 || true
+    if ! "$API_PIP" install -r requirements-api.txt >/dev/null 2>&1; then
+        error "No se pudieron instalar las dependencias del API."
+        exit 1
+    fi
+    ok "Dependencias del API instaladas en $API_VENV/."
 fi
 
 # -----------------------------------------------------------------------------
@@ -183,8 +203,18 @@ info "El API FastAPI correrá en: http://localhost:8000"
 warn "Presiona Ctrl+C para detener la aplicación."
 echo "------------------------------------------------------------"
 
-# Iniciar el API FastAPI en segundo plano
-.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000 > /tmp/opencode/hopescan-api.log 2>&1 &
+# Iniciar el API FastAPI en segundo plano (desde el entorno separado .venv-api/)
+if [ "$SISTEMA" = "windows" ]; then
+    API_UVICORN=".venv-api/Scripts/uvicorn"
+else
+    API_UVICORN=".venv-api/bin/uvicorn"
+fi
+if [ -x "$API_UVICORN" ]; then
+    "$API_UVICORN" api.main:app --host 127.0.0.1 --port 8000 > /tmp/opencode/hopescan-api.log 2>&1 &
+else
+    error "No se encontró uvicorn en $API_UVICORN. Ejecuta ./run.sh primero para instalar dependencias."
+    exit 1
+fi
 API_PID=$!
 
 # Iniciar el servidor de desarrollo de Vite (frontend React)
