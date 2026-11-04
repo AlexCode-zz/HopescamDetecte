@@ -1,12 +1,14 @@
 import { BrowserRouter } from "react-router-dom";
 import Layout from "@/components/Layout";
-import Analysis from "@/pages/Analysis";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Layout>
-        <Analysis />
+        <div style={{ padding: "2rem", background: "red" }}>
+          <h1>Hola mundo - React funciona</h1>
+          <p>Si ves esto, React y el Layout funcionan correctamente.</p>
+        </div>
       </Layout>
     </BrowserRouter>
   );
