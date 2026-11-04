@@ -130,7 +130,16 @@ if [ -f "requirements-api.txt" ]; then
     API_VENV=".venv-api"
     if [ ! -d "$API_VENV" ]; then
         info "Creando entorno virtual separado para el API ($API_VENV/)..."
-        python3 -m venv "$API_VENV"
+        # virtualenv no depende de ensurepip (a diferencia de python3 -m venv)
+        if command -v virtualenv >/dev/null 2>&1; then
+            virtualenv "$API_VENV" >/dev/null 2>&1
+        elif command -v uv >/dev/null 2>&1; then
+            uv venv "$API_VENV" >/dev/null 2>&1
+        else
+            error "No se puede crear $API_VENV/: faltan virtualenv o uv."
+            info "Instala python3-venv (apt install python3.13-venv) o usa otro entorno."
+            exit 1
+        fi
         ok "Entorno del API creado."
     fi
     if [ "$SISTEMA" = "windows" ]; then
@@ -147,6 +156,15 @@ if [ -f "requirements-api.txt" ]; then
         exit 1
     fi
     ok "Dependencias del API instaladas en $API_VENV/."
+fi
+
+# Asegurar que .venv/ no tenga fastapi (conflicto de starlette con Streamlit)
+if [ -d ".venv" ] && [ -f ".venv/bin/pip" ]; then
+    if .venv/bin/pip show fastapi >/dev/null 2>&1; then
+        warn "Desinstalando fastapi de .venv/ (incompatible con Streamlit/starlette)..."
+        .venv/bin/pip uninstall -y fastapi uvicorn starlette python-multipart >/dev/null 2>&1 || true
+        ok "fastapi removido de .venv/."
+    fi
 fi
 
 # -----------------------------------------------------------------------------
