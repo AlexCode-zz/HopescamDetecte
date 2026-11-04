@@ -1,5 +1,6 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, Link } from "react-router-dom";
 import { Layers, Activity, Lock, Info } from "lucide-react";
+import { DISCLAIMER } from "@/lib/constants";
 
 export default function Layout() {
   const location = useLocation();
@@ -19,16 +20,16 @@ export default function Layout() {
             </div>
           </div>
           <nav className="flex items-center gap-4 text-xs font-medium text-muted">
-            <a
-              href="/"
+            <Link
+              to="/"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-md transition-colors ${
                 location.pathname === "/" ? "bg-primary/10 text-primary border border-primary/20" : "hover:bg-muted/10 hover:text-ink"
               }`}
             >
               <Activity size={14} strokeWidth={2} /> Nuevo análisis
-            </a>
-            <a
-              href="/buscar"
+            </Link>
+            <Link
+              to="/buscar"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-md transition-colors ${
                 location.pathname === "/buscar"
                   ? "bg-primary/10 text-primary border border-primary/20"
@@ -36,9 +37,9 @@ export default function Layout() {
               }`}
             >
               <Layers size={14} strokeWidth={2} /> Buscar paciente
-            </a>
-            <a
-              href="/chat"
+            </Link>
+            <Link
+              to="/chat"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-md transition-colors ${
                 location.pathname === "/chat"
                   ? "bg-primary/10 text-primary border border-primary/20"
@@ -46,7 +47,7 @@ export default function Layout() {
               }`}
             >
               <Info size={14} strokeWidth={2} /> Asistente educativo
-            </a>
+            </Link>
           </nav>
         </div>
       </header>
