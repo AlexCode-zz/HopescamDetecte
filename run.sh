@@ -70,7 +70,16 @@ VENV_DIR=".venv"
 
 if [ ! -d "$VENV_DIR" ]; then
     info "Creando entorno virtual en $VENV_DIR/ ..."
-    python3 -m venv "$VENV_DIR"
+    # virtualenv / uv no dependen de ensurepip (a diferencia de python3 -m venv)
+    if command -v virtualenv >/dev/null 2>&1; then
+        virtualenv "$VENV_DIR" >/dev/null 2>&1
+    elif command -v uv >/dev/null 2>&1; then
+        uv venv "$VENV_DIR" >/dev/null 2>&1
+    else
+        error "No se puede crear $VENV_DIR/: faltan virtualenv o uv."
+        info "Instala python3-venv (apt install python3.13-venv) o virtualenv."
+        exit 1
+    fi
     ok "Entorno virtual creado."
 else
     ok "Entorno virtual ya existe ($VENV_DIR/)."
@@ -82,8 +91,10 @@ fi
 if [ "$SISTEMA" = "windows" ]; then
     # Git Bash / MSYS / Cygwin
     ACTIVATE_SCRIPT="$VENV_DIR/Scripts/activate"
+    VENV_PIP="$VENV_DIR/Scripts/pip"
 else
     ACTIVATE_SCRIPT="$VENV_DIR/bin/activate"
+    VENV_PIP="$VENV_DIR/bin/pip"
 fi
 
 if [ ! -f "$ACTIVATE_SCRIPT" ]; then
@@ -107,11 +118,11 @@ if [ -f "requirements.txt" ]; then
     fi
 
     info "Instalando dependencias de Python de $REQ_FILE (puede tardar unos minutos)..."
-    python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
-    if ! python3 -m pip install -r "$REQ_FILE"; then
+    "$VENV_PIP" install --upgrade pip >/dev/null 2>&1 || true
+    if ! "$VENV_PIP" install -r "$REQ_FILE"; then
         if [ "$REQ_FILE" = "requirements-cpu.txt" ]; then
             warn "Falló la instalación CPU; reintentando con requirements.txt (PyPI)."
-            python3 -m pip install -r requirements.txt
+            "$VENV_PIP" install -r requirements.txt
         else
             error "No se pudieron instalar las dependencias de Python."
             exit 1
