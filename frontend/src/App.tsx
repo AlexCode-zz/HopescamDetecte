@@ -1,10 +1,13 @@
+import { BrowserRouter } from "react-router-dom";
 import Layout from "@/components/Layout";
 import Analysis from "@/pages/Analysis";
 
 export default function App() {
   return (
-    <Layout>
-      <Analysis />
-    </Layout>
+    <BrowserRouter>
+      <Layout>
+        <Analysis />
+      </Layout>
+    </BrowserRouter>
   );
 }
