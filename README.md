@@ -29,14 +29,27 @@ Apoyo a la detección temprana de cáncer de mama por ultrasonido — El Salvado
 
 ```
 .
-├─ app.py                          # entrypoint Streamlit
+├─ app.py                          # entrypoint Streamlit (conservado; tests y retrocompatibilidad)
 ├─ inferencia_cancer3.py           # shim del punto de entrada original
 ├─ cli/predict.py                  # CLI argparse
+├─ api/main.py                     # API FastAPI que expone src/hopescan/ al frontend React
+├─ requirements-api.txt            # dependencias del API (fastapi, uvicorn, python-multipart)
 ├─ src/hopescan/
 │  ├─ config.py model.py inference.py gradcam.py patients.py report.py auth.py
 │  ├─ ood/                         # heurísticas + energy score + decisión final
 │  ├─ rag/                         # chunking, TF-IDF, guardrails y chat
-│  └─ ui/                          # nuevo_analisis, buscar_paciente, sidebar_info, chat_widget
+│  └─ ui/                          # lógica de UI de Streamlit (conservada)
+├─ frontend/                       # React + Vite + Tailwind (nueva UI principal)
+│  ├─ src/
+│  │  ├─ App.tsx                   # enrutado
+│  │  ├─ components/               # Progress, PatientForm, ImageUpload, AnalysisResult, Layout
+│  │  ├─ pages/                    # Analysis, PatientSearch, Chat
+│  │  ├─ lib/                      # api.ts, constants.ts, types.ts
+│  │  └─ index.css                 # diseño tokens y componentes base
+│  ├─ dist/                        # build de producción (ignorado)
+│  ├─ package.json
+│  ├─ tailwind.config.js
+│  └─ vite.config.js
 ├─ models/ood_calibration.json     # umbrales OOD provisionales (sin métricas clínicas)
 ├─ modelo_cancer_mobilenet.pth     # pesos del modelo (no se modifican)
 ├─ rag/knowledge/                  # documentos de ejemplo para el RAG
@@ -46,6 +59,7 @@ Apoyo a la detección temprana de cáncer de mama por ultrasonido — El Salvado
 │  └─ sample_patient_records.csv   # filas ficticias (versionado)
 ├─ tests/                          # unidad, OOD, RAG, reporte y smoke AppTest
 ├─ docs/                           # auditoría, decisiones, arquitectura, progreso y limpieza
+├─ DESIGN.md                       # plan de diseño (frontend-design skill)
 ├─ .github/workflows/ci.yml
 └─ requirements*.txt  .env.example  .streamlit/secrets.toml.example  .gitignore
 ```
@@ -60,21 +74,48 @@ Apoyo a la detección temprana de cáncer de mama por ultrasonido — El Salvado
 
 ## Instalación
 
-```bash
-# Opción rápida: crea el venv, instala dependencias, copia plantillas y lanza la app
-./run.sh
+### Opción rápida (recomendada)
 
-# Opción manual
+```bash
+# Crea el venv, instala dependencias de Python + API, instala y construye el
+# frontend React, y levanta ambos servidores (API en :8000, frontend en :5173)
+./run.sh
+```
+
+La aplicación principal (React) estará disponible en `http://localhost:5173`.
+El API FastAPI en `http://localhost:8000/api/health`.
+
+### Opción manual
+
+```bash
+# 1. Entorno virtual y dependencias Python (incluye el API FastAPI)
 python -m venv .venv
 source .venv/bin/activate          # Linux/macOS
 # .venv\Scripts\activate           # Windows
 pip install -r requirements-cpu.txt  # o requirements.txt en macOS
+pip install -r requirements-api.txt  # API para el frontend React
 pip install -r requirements-dev.txt  # opcional: pytest, ruff
+
+# 2. Frontend React
+cd frontend
+npm install
+npm run build                      # build de producción (o `npm run dev` para servidor de desarrollo)
+cd ..
+
+# 3. Levantar el API y servir el frontend
+.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000
+# En otra terminal, servir frontend/dist o ejecutar: cd frontend && npm run dev
+```
+
+### Streamlit (conservado)
+
+La app Streamlit original sigue funcionando para pruebas y retrocompatibilidad:
+
+```bash
 streamlit run app.py
 ```
 
-La app estará disponible en `http://localhost:8501`. También se puede abrir el
-shim legado con `streamlit run inferencia_cancer3.py`.
+## Configuración de secretos
 
 ## Configuración de secretos
 
