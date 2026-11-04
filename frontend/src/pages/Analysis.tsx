@@ -169,7 +169,7 @@ export default function Analysis() {
                 {demoMode && (
                   <div className="rounded-md bg-attention/10 border border-attention/20 p-3">
                     <p className="text-small text-attention flex items-center gap-2">
-                      <Science size={14} strokeWidth={2} /> Modo demostración:
+                      <Microscope size={14} strokeWidth={2} /> Modo demostración:
                       datos ficticios, no se guarda.
                     </p>
                   </div>
